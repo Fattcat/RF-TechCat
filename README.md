@@ -8,9 +8,10 @@ RF-TechCat - clones your 433MHz keys
 
 ## How to control me ?
 - Easy by using WEB Interface
-  - | SSID   | ESP32_Control | <-- CHANGE ME |
-  - | Passwd | 12345678      | <-- CHANGE ME |
-  - Open your browser, type there 192.168.4.1, hit enter
+| SSID   | ESP32_Control | <-- CHANGE ME |
+| Passwd | 12345678      | <-- CHANGE ME |
+
+- Open your browser, type there 192.168.4.1, hit enter
 
 ## Functions
   - [x] Support 24 Bit
