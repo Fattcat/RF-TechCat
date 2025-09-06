@@ -5,7 +5,6 @@
 </p>
 
 <p align="center">
-  <img src="images/logo.png" alt="Logo" width="200"/><br><br>
   <img src="https://visitor-badge.laobi.icu/badge?page_id=Fattcat.RF-TechCat" alt="Visitors"/>
   <img src="https://img.shields.io/github/downloads/Fattcat/RF-TechCat/total" alt="Downloads"/>
 </p>
