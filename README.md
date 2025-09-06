@@ -11,9 +11,9 @@
 
 ## <p align="center">RF-TechCat - clones your 433MHz keys</p>
 
-## <p align="center">What Am I made & used for ?</p>
+## <p align="center">For what Am I made & used for ?</p>
 
-- Copying and replaying 433 MHz Signal captured from somewhere :D
+- Copying & replaying 433 MHz Signal captured from somewhere :D
 - Savind & next time replaying signals
 - ```universal Remote Control```
 
@@ -21,10 +21,10 @@
 
 - Easy by using WEB Interface
 
-| WiFi           | Credentials    | To Connect     |
-|----------------|----------------|----------------|
-| SSID           | ESP32_Control  | <-- CHANGE ME  |
-| Password       | 12345678       | <-- CHANGE ME  |
+
+| SSID             | ESP32_Control    | CHANGE_ME (Default) |
+| ---------------- | ---------------- | ----------------    |
+| Password         | 12345678         | CHANGE ME (Default) |
 
 - Open your browser, type there 192.168.4.1, hit enter
 
