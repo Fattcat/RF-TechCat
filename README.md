@@ -4,6 +4,10 @@
   <img src="images/RF-TechCat.png" alt="Logo" width="300"/>
 </p>
 
+![Visitors](https://visitor-badge.laobi.icu/badge?page_id=Fattcat.RF-TechCat)
+
+![GitHub all releases](https://img.shields.io/github/downloads/Fattcat/RF-TechCat/total)
+
 ## <p align="center">RF-TechCat - clones your 433MHz keys</p>
 
 ## <p align="center">What Am I made & used for ?</p>
