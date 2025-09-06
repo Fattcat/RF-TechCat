@@ -1,12 +1,18 @@
-# RF-TechCat
-RF-TechCat - clones your 433MHz keys
+# <p align="center">F-TechCat</p>
 
-## What Am I made & used for ?
+<p align="center">
+  <img src="images/RF-TechCat.png" alt="Logo" width="200"/>
+</p>
+### <p align="center">RF-TechCat - clones your 433MHz keys</p>
+
+## <p align="center">What Am I made & used for ?</p>
+
 - Copying and replaying 433 MHz Signal captured from somewhere :D
 - Savind & next time replaying signals
 - ```universal Remote Control```
 
-## How to control me ?
+## <p align="center">How to control me ?</p>
+
 - Easy by using WEB Interface
 
 | WiFi           | Credentials    | To Connect     |
