@@ -1,7 +1,7 @@
 # <p align="center">RF-TechCat</p>
 
 <p align="center">
-  <img src="images/RF-TechCat.png" alt="Logo" width="200"/>
+  <img src="images/RF-TechCat.png" alt="Logo" width="300"/>
 </p>
 
 ## <p align="center">RF-TechCat - clones your 433MHz keys</p>
