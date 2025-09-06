@@ -22,9 +22,9 @@
 - Easy by using WEB Interface
 
 
-| SSID             | ESP32_Control    | CHANGE_ME (Default) |
-| ---------------- | ---------------- | ----------------    |
-| Password         | 12345678         | CHANGE ME (Default) |
+| SSID             | ESP32_Control    |
+| ---------------- | ---------------- |
+| Password         | 12345678         |
 
 - Open your browser, type there 192.168.4.1, hit enter
 
