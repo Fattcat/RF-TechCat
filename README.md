@@ -21,12 +21,12 @@
 
 - Easy by using WEB Interface
 
-
-| SSID             | ESP32_Control    |
-| ---------------- | ---------------- |
-| Password         | 12345678         |
+| SSID         | ESP32_Control       |
+| ------------ | ------------------- |
+| Password     | LINE 9 in .ino code |
 
 - Open your browser, type there 192.168.4.1, hit enter
+- its now a little in experimental demo version, **but it works :D**
 
 ## Functions
   - [x] Support 24 Bit
@@ -36,3 +36,14 @@
   - [ ] cc1101
   - [x] Nice looking Web, easy controling
   - [ ] Supports RollJam
+
+## Todo
+  - add RollJam with time to set (e.g. 5 seconds, 10, 30, 1 min)
+  - add Rolling Codes (From xxxxxxx to xxxxxxxx) --> ```max value for 24 Bit is 16777215 !```
+  ### add support for cc1101
+
+## List of fixed bugz
+| bug name or in short   | Fixed ? | 
+| ---------------------- | ------- |
+| Popup status window    | ✅     |
+| allow RE-name of file  | ✅     |
