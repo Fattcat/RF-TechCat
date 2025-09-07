@@ -36,6 +36,9 @@ long lastValidCode = -1;
 String pendingName = "Unknown";
 bool signalReceived = false;
 
+// === Pre Rolling Codes ===
+volatile bool rollingShouldStop = false; // Globálna premenná na zastavenie Rolling Codes
+
 // === HTML stránka s frekvenčnou mierkou a progress barom ===
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -545,11 +548,15 @@ const char index_html[] PROGMEM = R"rawliteral(
           updateProgress(data.total, 0);
           document.getElementById('progressStatus').textContent = '🔄 Prebieha odosielanie...';
           document.getElementById('progressStatus').style.color = '#3498db';
+
         } else if (data.type === 'roll_progress') {
           // Aktualizujeme progress bar
           updateProgress(data.total, data.current);
-          // Voliteľne: pridáme kód do logu
-          addToSendLog(data.current + fromCode - 1, 'odoslaný'); // Toto je aproximácia, pretože neposiela presný kód
+          // Pridáme presný kód do logu
+          if (data.code !== undefined) {
+            addToSendLog(data.code, 'odoslaný');
+          }
+
         } else if (data.type === 'roll_complete') {
           if (data.success) {
             showPopup('Rolling Codes', true, { 
@@ -564,7 +571,17 @@ const char index_html[] PROGMEM = R"rawliteral(
             });
           }
           resetRollingButton();
+
+        } else if (data.type === 'roll_stopped') {
+          showPopup('Rolling Codes', true, { 
+            message: `⏹️ Zastavené! Odoslaných ${data.count} kódov` 
+          });
+          updateProgress(data.count, data.count);
+          document.getElementById('progressStatus').textContent = '⏹️ Zastavené používateľom';
+          document.getElementById('progressStatus').style.color = '#e74c3c';
+          resetRollingButton();
         }
+
       } catch (e) {
         console.error('Chyba pri spracovaní WebSocket správy:', e);
       }
@@ -579,6 +596,10 @@ const char index_html[] PROGMEM = R"rawliteral(
       console.error('WebSocket Error:', error);
     };
   }
+
+
+
+
 
   // Spustite WebSocket po načítaní stránky
   window.addEventListener('load', initWebSocket);
@@ -1042,22 +1063,24 @@ const char index_html[] PROGMEM = R"rawliteral(
         });
     }
 
-    // === Rolling Codes Control ===
     function toggleRollingCodes() {
       const btn = document.getElementById('rollBtn');
       if (isRolling) {
         // Zastaviť
         isRolling = false;
-        if (rollingAbortController) {
-          rollingAbortController.abort();
-          rollingAbortController = null;
-        }
-        btn.textContent = '▶️ Start RollingCodes';
-        btn.style.background = '#3498db';
-        btn.style.color = 'white';
-        showMessage('Rolling Codes zastavené');
-        showPopup('Rolling Codes', true, { message: 'Rolling Codes boli úspešne zastavené!' });
-        updateProgress(totalCodesToProcess, processedCodesCount);
+        fetch('/rollStop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: ''
+        })
+        .then(() => {
+          showMessage('Zastavujem Rolling Codes...');
+          // Tlačidlo sa resetuje až po prijatí správy "roll_stopped" cez WebSocket
+        })
+        .catch(err => {
+          console.error('Chyba pri zastavovaní:', err);
+          resetRollingButton();
+        });
       } else {
         // Spustiť
         const fromCode = parseInt(document.getElementById('rollFrom').value);
@@ -1082,49 +1105,32 @@ const char index_html[] PROGMEM = R"rawliteral(
           return;
         }
 
-        // Vymazanie predchádzajúceho logu a inicializácia
+        // Vymazanie logu a inicializácia progress baru
         clearSendLog();
         const totalCount = toCode - fromCode + 1;
         updateProgress(totalCount, 0);
 
-        // Spustenie
+        // Zmena tlačidla
         isRolling = true;
-        btn.textContent = '⏹️ Stop';
+        btn.textContent = '⏹️ STOP';
         btn.style.background = '#e74c3c';
         btn.style.color = 'white';
 
+        // Popup o spustení
         showPopup('Rolling Codes', true, { 
           message: `Spúšťam od ${fromCode} po ${toCode} s oneskorením ${delayMs}ms` 
         });
 
-        rollingAbortController = new AbortController();
-
+        // Odoslanie požiadavky na server
         fetch('/roll', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `from=${fromCode}&to=${toCode}&delay=${delayMs}`,
-          signal: rollingAbortController.signal
-        })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            showPopup('Rolling Codes', true, { 
-              message: `✅ Dokončené! Odoslaných ${data.count} kódov za ${data.duration}s` 
-            });
-          } else {
-            showPopup('Rolling Codes', false, { 
-              message: `❌ Chyba: ${data.message}` 
-            });
-          }
-          resetRollingButton();
-          updateProgress(data.total || 0, data.count || 0);
+          body: `from=${fromCode}&to=${toCode}&delay=${delayMs}`
         })
         .catch(err => {
-          if (err.name !== 'AbortError') {
-            showPopup('Rolling Codes', false, { message: 'Chyba: ' + err.message });
-          }
+          console.error('Chyba pri spúšťaní Rolling Codes:', err);
+          showPopup('Rolling Codes', false, { message: 'Chyba: ' + err.message });
           resetRollingButton();
-          updateProgress(totalCodesToProcess, processedCodesCount);
         });
       }
     }
@@ -1497,29 +1503,38 @@ void setup() {
   });
 
   server.on("/list", HTTP_GET, [](AsyncWebServerRequest *request){
-    String json = "[";
-    for (int i = 0; i < codeCount; i++) {
-      String cleanName = "";
-      for (int j = 0; j < 32; j++) {
-        char c = savedCodes[i].name[j];
-        if (c == '\0') break;
-        if (c >= 32 && c <= 126) {
-          if (c == '"') cleanName += "\\\"";
-          else if (c == '\\') cleanName += "\\\\";
-          else if (c == '\n') cleanName += "\\n";
-          else if (c == '\r') cleanName += "\\r";
-          else cleanName += c;
-        }
+      String json = "[";
+      for (int i = 0; i < codeCount; i++) {
+          // Bezpečné escapovanie mena
+          String cleanName = "";
+          bool valid = false;
+          for (int j = 0; j < 32; j++) {
+              char c = savedCodes[i].name[j];
+              if (c == '\0') break;
+              if (c >= 32 && c <= 126) {
+                  valid = true;
+                  if (c == '"') cleanName += "\\\"";
+                  else if (c == '\\') cleanName += "\\\\";
+                  else if (c == '\n') cleanName += "\\n";
+                  else if (c == '\r') cleanName += "\\r";
+                  else cleanName += c;
+              }
+          }
+          if (!valid || cleanName.length() == 0) {
+              cleanName = "Nezmenovaný";
+          }
+
+          // Pridanie položky do JSON
+          json += "{\"name\":\"" + cleanName + "\",\"code\":" + String(savedCodes[i].code) + "}";
+          if (i < codeCount - 1) json += ",";
       }
-      if (cleanName.length() == 0) cleanName = "Nezmenovaný";
-      json += "{\"name\":\"" + cleanName + "\",\"code\":" + String(savedCodes[i].code) + "}";
-      if (i < codeCount - 1) json += ",";
-    }
-    json += "]";
-    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
-    response->addHeader("Access-Control-Allow-Origin", "*");
-    response->addHeader("Content-Type", "application/json");
-    request->send(response);
+      json += "]";
+
+      // Odošleme odpoveď s hlavičkami
+      AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
+      response->addHeader("Access-Control-Allow-Origin", "*");
+      response->addHeader("Content-Type", "application/json");
+      request->send(response);
   });
 
   server.on("/lastSignal", HTTP_GET, [] (AsyncWebServerRequest *request){
@@ -1540,23 +1555,119 @@ void setup() {
     request->send(200, "text/plain", "Prijímanie (3s)...");
   });
 
-  // === NOVÝ HANDLER PRE ULOŽENIE MANUÁLNEHO KÓDU ===
-  server.on("/saveManual", HTTP_POST, [](AsyncWebServerRequest *request){
-    if (request->hasParam("code", true) && request->hasParam("name", true)) {
-      long code = request->getParam("code", true)->value().toInt();
-      String name = request->getParam("name", true)->value();
-      // Overenie kódu (voliteľné, ale odporúčané)
-      if (code > 0 && code <= 16777215) {
-        saveCodeToEEPROM(code, name.c_str());
-        Serial.printf("✅ Manuálne uložený kód: %ld (%s)\n", code, name.c_str());
-        printEEPROMStatus();
-        request->send(200, "text/plain", "OK"); // Dôležité: Pošleme OK, aby JS vedel, že to prebehlo úspešne
-      } else {
-        request->send(400, "text/plain", "Neplatný kód");
+  // === HANDLER PRE ROLLING CODES ===
+  server.on("/roll", HTTP_POST, [](AsyncWebServerRequest *request){
+      if (!request->hasParam("from", true) || 
+          !request->hasParam("to", true) || 
+          !request->hasParam("delay", true)) {
+        request->send(400, "application/json", "{\"success\":false,\"message\":\"Chýbajúce parametre\"}");
+        return;
       }
-    } else {
-      request->send(400, "text/plain", "Chýbajúce parametre");
-    }
+      long fromCode = request->getParam("from", true)->value().toInt();
+      long toCode = request->getParam("to", true)->value().toInt();
+      int delayMs = request->getParam("delay", true)->value().toInt();
+      if (fromCode < 1 || toCode > 16777215 || fromCode > toCode || delayMs < 50 || delayMs > 2000) {
+        request->send(400, "application/json", "{\"success\":false,\"message\":\"Neplatný rozsah\"}");
+        return;
+      }
+
+      // Nastavíme príznak, že sa má pokračovať
+      rollingShouldStop = false;
+
+      // Vytvoríme kópiu parametrov pre novú úlohu
+      struct RollParams {
+          long fromCode;
+          long toCode;
+          int delayMs;
+      };
+
+      RollParams *params = new RollParams{fromCode, toCode, delayMs};
+
+      // Spustíme úlohu na druhom jadre
+      xTaskCreatePinnedToCore(
+          [](void *param) {
+              RollParams *p = (RollParams *)param;
+              long fromCode = p->fromCode;
+              long toCode = p->toCode;
+              int delayMs = p->delayMs;
+              delete p;
+
+              // Vypneme watchdog
+              disableCore0WDT();
+              disableCore1WDT();
+
+              unsigned long startTime = millis();
+              int count = 0;
+              int totalCount = toCode - fromCode + 1;
+
+              // Odošleme info, že začíname
+              String startMsg = "{\"type\":\"roll_start\",\"total\":" + String(totalCount) + "}";
+              ws.textAll(startMsg);
+
+              for (long code = fromCode; code <= toCode; code++) {
+                  // Skontrolujeme, či máme zastaviť
+                  if (rollingShouldStop) {
+                      String stopMsg = "{\"type\":\"roll_stopped\",\"count\":" + String(count) + "}";
+                      ws.textAll(stopMsg);
+                      break;
+                  }
+
+                  mySwitch.send(code, 24);
+                  count++;
+
+                  // Odošleme progress s kódom
+                  String progressMsg = "{\"type\":\"roll_progress\",\"current\":" + String(count) + ",\"total\":" + String(totalCount) + ",\"code\":" + String(code) + "}";
+                  ws.textAll(progressMsg);
+
+                  yield();
+
+                  if (delayMs > 0 && code < toCode) {
+                      unsigned long startDelay = millis();
+                      while (millis() - startDelay < delayMs) {
+                          yield();
+                          delay(1);
+                          // Skontrolujeme zastavenie aj počas oneskorenia
+                          if (rollingShouldStop) break;
+                      }
+                      if (rollingShouldStop) {
+                          String stopMsg = "{\"type\":\"roll_stopped\",\"count\":" + String(count) + "}";
+                          ws.textAll(stopMsg);
+                          break;
+                      }
+                  }
+              }
+
+              unsigned long duration = millis() - startTime;
+              float seconds = duration / 1000.0;
+
+              // Zapneme watchdog späť
+              enableCore0WDT();
+              enableCore1WDT();
+
+              // Odošleme finálnu správu
+              if (!rollingShouldStop) {
+                  String resultMsg = "{\"type\":\"roll_complete\",\"success\":true,\"count\":" + String(count) + ",\"duration\":" + String(seconds, 2) + "}";
+                  ws.textAll(resultMsg);
+              }
+
+              vTaskDelete(NULL);
+          },
+          "RollingTask",
+          8192,
+          params,
+          1,
+          NULL,
+          1
+      );
+
+      // Okamžitá odpoveď, že úloha bola spustená
+      request->send(202, "application/json", "{\"success\":true,\"message\":\"Rolling Codes spustené na pozadí\"}");
+  });
+
+  // === HANDLER PRE ZASTAVENIE ROLLING CODES ===
+  server.on("/rollStop", HTTP_POST, [](AsyncWebServerRequest *request){
+      rollingShouldStop = true;
+      request->send(200, "application/json", "{\"success\":true,\"message\":\"Zastavujem Rolling Codes...\"}");
   });
 
   server.on("/transmit", HTTP_POST, [](AsyncWebServerRequest *request){
@@ -1616,97 +1727,6 @@ void setup() {
     clearAllCodesInEEPROM();
     request->send(200, "text/plain", "Všetko vymazané");
     printEEPROMStatus();
-  });
-
-  // === HANDLER PRE ROLLING CODES === (OPRAVENÝ PRE ASYNCHRÓNNE SPRACOVANIE)
-  server.on("/roll", HTTP_POST, [](AsyncWebServerRequest *request){
-      if (!request->hasParam("from", true) || 
-          !request->hasParam("to", true) || 
-          !request->hasParam("delay", true)) {
-        request->send(400, "application/json", "{\"success\":false,\"message\":\"Chýbajúce parametre\"}");
-        return;
-      }
-      long fromCode = request->getParam("from", true)->value().toInt();
-      long toCode = request->getParam("to", true)->value().toInt();
-      int delayMs = request->getParam("delay", true)->value().toInt();
-      if (fromCode < 1 || toCode > 16777215 || fromCode > toCode || delayMs < 50 || delayMs > 2000) {
-        request->send(400, "application/json", "{\"success\":false,\"message\":\"Neplatný rozsah\"}");
-        return;
-      }
-
-      // Vytvoríme kópiu parametrov pre novú úlohu
-      struct RollParams {
-          long fromCode;
-          long toCode;
-          int delayMs;
-      };
-
-      RollParams *params = new RollParams{fromCode, toCode, delayMs};
-
-      // Vytvoríme a spustíme novú FreeRTOS úlohu
-      xTaskCreatePinnedToCore(
-          [](void *param) {
-              RollParams *p = (RollParams *)param;
-              long fromCode = p->fromCode;
-              long toCode = p->toCode;
-              int delayMs = p->delayMs;
-              delete p; // Uvoľníme pamäť
-
-              // Vypneme watchdog na oboch jadrách
-              disableCore0WDT();
-              disableCore1WDT();
-
-              unsigned long startTime = millis();
-              int count = 0;
-              int totalCount = toCode - fromCode + 1;
-
-              // Odosleme správu cez WebSocket, že úloha začala
-              String startMsg = "{\"type\":\"roll_start\",\"total\":" + String(totalCount) + "}";
-              ws.textAll(startMsg);
-
-              for (long code = fromCode; code <= toCode; code++) {
-                  mySwitch.send(code, 24);
-                  count++;
-
-                  // Odosleme aktualizáciu priebehu cez WebSocket
-                  String progressMsg = "{\"type\":\"roll_progress\",\"current\":" + String(count) + ",\"total\":" + String(totalCount) + "}";
-                  ws.textAll(progressMsg);
-
-                  yield();
-
-                  if (delayMs > 0 && code < toCode) {
-                      unsigned long startDelay = millis();
-                      while (millis() - startDelay < delayMs) {
-                          yield();
-                          delay(1);
-                      }
-                  }
-              }
-
-              unsigned long duration = millis() - startTime;
-              float seconds = duration / 1000.0;
-
-              // Zapneme watchdog späť
-              enableCore0WDT();
-              enableCore1WDT();
-
-              // Odosleme finálnu správu cez WebSocket
-              String resultMsg = "{\"type\":\"roll_complete\",\"success\":true,\"count\":" + String(count) + ",\"duration\":" + String(seconds, 2) + "}";
-              ws.textAll(resultMsg);
-
-              // Odstránime úlohu
-              vTaskDelete(NULL);
-          },
-          "RollingTask",   // Názov úlohy
-          8192,            // Zväčšený zásobník kvôli reťazcom
-          params,          // Parameter pre úlohu
-          1,               // Priorita úlohy
-          NULL,            // Handle úlohy
-          1                // Core (1 = druhé jadro)
-      );
-
-      // Okamžite pošleme odpoveď, že proces bol spustený.
-      request->send(202, "application/json", "{\"success\":true,\"message\":\"Rolling Codes spustené na pozadí\"}");
   });
 
   // Nastavte WebSocket callback
