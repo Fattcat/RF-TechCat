@@ -28,6 +28,8 @@ int codeCount = 0;
 // === Globálne premenné ===
 RCSwitch mySwitch = RCSwitch();
 AsyncWebServer server(80);
+// === WebSocket Server ===
+AsyncWebSocket ws("/ws");
 bool isReceiving = false;
 unsigned long receiveStartTime = 0;
 long lastValidCode = -1;
@@ -522,6 +524,65 @@ const char index_html[] PROGMEM = R"rawliteral(
     </div>
   </div>
   <script>
+  // === WebSocket Connection ===
+  let ws = null;
+  function initWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = protocol + '//' + window.location.host + '/ws';
+    ws = new WebSocket(url);
+
+    ws.onopen = function(event) {
+      console.log('WebSocket connected');
+    };
+
+    ws.onmessage = function(event) {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('WebSocket message received:', data);
+
+        if (data.type === 'roll_start') {
+          // Inicializujeme progress bar
+          updateProgress(data.total, 0);
+          document.getElementById('progressStatus').textContent = '🔄 Prebieha odosielanie...';
+          document.getElementById('progressStatus').style.color = '#3498db';
+        } else if (data.type === 'roll_progress') {
+          // Aktualizujeme progress bar
+          updateProgress(data.total, data.current);
+          // Voliteľne: pridáme kód do logu
+          addToSendLog(data.current + fromCode - 1, 'odoslaný'); // Toto je aproximácia, pretože neposiela presný kód
+        } else if (data.type === 'roll_complete') {
+          if (data.success) {
+            showPopup('Rolling Codes', true, { 
+              message: `✅ Dokončené! Odoslaných ${data.count} kódov za ${data.duration}s` 
+            });
+            updateProgress(data.count, data.count); // Nastavíme na 100%
+            document.getElementById('progressStatus').textContent = '✅ Dokončené!';
+            document.getElementById('progressStatus').style.color = '#27ae60';
+          } else {
+            showPopup('Rolling Codes', false, { 
+              message: `❌ Chyba: ${data.message}` 
+            });
+          }
+          resetRollingButton();
+        }
+      } catch (e) {
+        console.error('Chyba pri spracovaní WebSocket správy:', e);
+      }
+    };
+
+    ws.onclose = function(event) {
+      console.log('WebSocket disconnected, attempting to reconnect...');
+      setTimeout(initWebSocket, 3000); // Skúsi znova pripojiť za 3 sekundy
+    };
+
+    ws.onerror = function(error) {
+      console.error('WebSocket Error:', error);
+    };
+  }
+
+  // Spustite WebSocket po načítaní stránky
+  window.addEventListener('load', initWebSocket);
+
     let loopInterval = null;
     let canvas, ctx;
     let spectrumData = new Uint8Array(128);
@@ -1394,6 +1455,16 @@ void printEEPROMStatus() {
   Serial.println("-------------------");
 }
 
+// === WebSocket Callback ===
+void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  if (type == WS_EVT_CONNECT) {
+    Serial.printf("WebSocket Client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+  } else if (type == WS_EVT_DISCONNECT) {
+    Serial.printf("WebSocket Client #%u disconnected\n", client->id());
+  }
+  // Ostatné eventy nás momentálne nezaujímajú
+}
+
 // === Setup ===
 void setup() {
   Serial.begin(115200);
@@ -1547,68 +1618,102 @@ void setup() {
     printEEPROMStatus();
   });
 
-  // === HANDLER PRE ROLLING CODES === (UMIESTNENÝ PRED server.begin();)
+  // === HANDLER PRE ROLLING CODES === (OPRAVENÝ PRE ASYNCHRÓNNE SPRACOVANIE)
   server.on("/roll", HTTP_POST, [](AsyncWebServerRequest *request){
-    if (!request->hasParam("from", true) || 
-        !request->hasParam("to", true) || 
-        !request->hasParam("delay", true)) {
-      request->send(400, "application/json", "{\"success\":false,\"message\":\"Chýbajúce parametre\"}");
-      return;
-    }
-
-    long fromCode = request->getParam("from", true)->value().toInt();
-    long toCode = request->getParam("to", true)->value().toInt();
-    int delayMs = request->getParam("delay", true)->value().toInt();
-
-    if (fromCode < 1 || toCode > 16777215 || fromCode > toCode || delayMs < 50 || delayMs > 2000) {
-      request->send(400, "application/json", "{\"success\":false,\"message\":\"Neplatný rozsah\"}");
-      return;
-    }
-
-    // === VYPNUTIE WATCHDOGU ===
-    disableCore0WDT();
-    disableCore1WDT();
-
-    unsigned long startTime = millis();
-    int count = 0;
-    int totalCount = toCode - fromCode + 1;
-
-    for (long code = fromCode; code <= toCode; code++) {
-      if (!request->client()->connected()) {
-        String response = "{\"success\":false,\"message\":\"Prerušené používateľom\",\"count\":" + String(count) + "}";
-        
-        // === ZAPNUTIE WATCHDOGU SPÄŤ ===
-        enableCore0WDT();
-        enableCore1WDT();
-        
-        request->send(200, "application/json", response);
+      if (!request->hasParam("from", true) || 
+          !request->hasParam("to", true) || 
+          !request->hasParam("delay", true)) {
+        request->send(400, "application/json", "{\"success\":false,\"message\":\"Chýbajúce parametre\"}");
         return;
       }
-      
-      mySwitch.send(code, 24);
-      count++;
-      
-      yield();
-
-      if (delayMs > 0 && code < toCode) {
-        unsigned long startDelay = millis();
-        while (millis() - startDelay < delayMs) {
-          yield();
-          delay(1);
-        }
+      long fromCode = request->getParam("from", true)->value().toInt();
+      long toCode = request->getParam("to", true)->value().toInt();
+      int delayMs = request->getParam("delay", true)->value().toInt();
+      if (fromCode < 1 || toCode > 16777215 || fromCode > toCode || delayMs < 50 || delayMs > 2000) {
+        request->send(400, "application/json", "{\"success\":false,\"message\":\"Neplatný rozsah\"}");
+        return;
       }
-    }
 
-    unsigned long duration = millis() - startTime;
-    float seconds = duration / 1000.0;
-    String response = "{\"success\":true,\"message\":\"Dokončené\",\"count\":" + String(count) + ",\"duration\":" + String(seconds, 2) + "}";
-    
-    // === ZAPNUTIE WATCHDOGU SPÄŤ ===
-    enableCore0WDT();
-    enableCore1WDT();
+      // Vytvoríme kópiu parametrov pre novú úlohu
+      struct RollParams {
+          long fromCode;
+          long toCode;
+          int delayMs;
+      };
 
-    request->send(200, "application/json", response);
+      RollParams *params = new RollParams{fromCode, toCode, delayMs};
+
+      // Vytvoríme a spustíme novú FreeRTOS úlohu
+      xTaskCreatePinnedToCore(
+          [](void *param) {
+              RollParams *p = (RollParams *)param;
+              long fromCode = p->fromCode;
+              long toCode = p->toCode;
+              int delayMs = p->delayMs;
+              delete p; // Uvoľníme pamäť
+
+              // Vypneme watchdog na oboch jadrách
+              disableCore0WDT();
+              disableCore1WDT();
+
+              unsigned long startTime = millis();
+              int count = 0;
+              int totalCount = toCode - fromCode + 1;
+
+              // Odosleme správu cez WebSocket, že úloha začala
+              String startMsg = "{\"type\":\"roll_start\",\"total\":" + String(totalCount) + "}";
+              ws.textAll(startMsg);
+
+              for (long code = fromCode; code <= toCode; code++) {
+                  mySwitch.send(code, 24);
+                  count++;
+
+                  // Odosleme aktualizáciu priebehu cez WebSocket
+                  String progressMsg = "{\"type\":\"roll_progress\",\"current\":" + String(count) + ",\"total\":" + String(totalCount) + "}";
+                  ws.textAll(progressMsg);
+
+                  yield();
+
+                  if (delayMs > 0 && code < toCode) {
+                      unsigned long startDelay = millis();
+                      while (millis() - startDelay < delayMs) {
+                          yield();
+                          delay(1);
+                      }
+                  }
+              }
+
+              unsigned long duration = millis() - startTime;
+              float seconds = duration / 1000.0;
+
+              // Zapneme watchdog späť
+              enableCore0WDT();
+              enableCore1WDT();
+
+              // Odosleme finálnu správu cez WebSocket
+              String resultMsg = "{\"type\":\"roll_complete\",\"success\":true,\"count\":" + String(count) + ",\"duration\":" + String(seconds, 2) + "}";
+              ws.textAll(resultMsg);
+
+              // Odstránime úlohu
+              vTaskDelete(NULL);
+          },
+          "RollingTask",   // Názov úlohy
+          8192,            // Zväčšený zásobník kvôli reťazcom
+          params,          // Parameter pre úlohu
+          1,               // Priorita úlohy
+          NULL,            // Handle úlohy
+          1                // Core (1 = druhé jadro)
+      );
+
+      // Okamžite pošleme odpoveď, že proces bol spustený.
+      request->send(202, "application/json", "{\"success\":true,\"message\":\"Rolling Codes spustené na pozadí\"}");
   });
+
+  // Nastavte WebSocket callback
+  ws.onEvent(onWsEvent);
+  // Pripojte WebSocket k serveru
+  server.addHandler(&ws);
+  // Spustite server
 
   server.begin();
   Serial.println("Server: http://192.168.4.1");
