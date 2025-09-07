@@ -4,12 +4,9 @@
 #include <RCSwitch.h>
 #include <EEPROM.h>
 
-// Fix somehow popup window when capturing signal, It just show that did NOT captured signal, BUT it actualy DID and saved it.
-// Fix somehow "Manuálny vstup kódu", after inserting code for example 11509160 and pressing button "Overiť a uložiť kód" it DID NOT Saved inserted code to the others saved codes inside "Uložené kódy" 
-
 // === WiFi nastavenia ===
 const char* ssid = "ESP32_Control";
-const char* password = "12345678";
+const char* password = "YourPassWD";
 
 // === RCSwitch ===
 #define RX_PIN 2
@@ -31,7 +28,6 @@ int codeCount = 0;
 // === Globálne premenné ===
 RCSwitch mySwitch = RCSwitch();
 AsyncWebServer server(80);
-
 bool isReceiving = false;
 unsigned long receiveStartTime = 0;
 long lastValidCode = -1;
@@ -136,7 +132,6 @@ const char index_html[] PROGMEM = R"rawliteral(
       line-height: 1.6;
       color: #5d4037;
     }
-
     /* Progress bar */
     .progress-container {
       width: 100%;
@@ -155,7 +150,6 @@ const char index_html[] PROGMEM = R"rawliteral(
       line-height: 20px;
       transition: width 0.1s linear;
     }
-
     /* Progress bar pre prijímanie */
     .receive-progress {
       width: 100%;
@@ -171,7 +165,6 @@ const char index_html[] PROGMEM = R"rawliteral(
       background: #2980b9;
       transition: width 0.1s linear;
     }
-
     /* Canvas spektrálna vizualizácia */
     .signal-animation {
       height: 100px;
@@ -198,7 +191,6 @@ const char index_html[] PROGMEM = R"rawliteral(
       opacity: 0.3;
       z-index: 2;
     }
-
     /* Frekvenčná mierka */
     .frequency-scale {
       display: flex;
@@ -209,7 +201,6 @@ const char index_html[] PROGMEM = R"rawliteral(
       color: #0f0;
       padding: 0 10px;
     }
-
     .codes-list {
       max-height: 500px;
       overflow-y: auto;
@@ -261,7 +252,6 @@ const char index_html[] PROGMEM = R"rawliteral(
       border-radius: 5px;
       display: none;
     }
-    
     /* Popup styles */
     .popup-overlay {
       position: fixed;
@@ -278,12 +268,10 @@ const char index_html[] PROGMEM = R"rawliteral(
       visibility: hidden;
       transition: opacity 0.3s, visibility 0.3s;
     }
-    
     .popup-overlay.active {
       opacity: 1;
       visibility: visible;
     }
-    
     .popup-content {
       background: white;
       border-radius: 15px;
@@ -296,17 +284,14 @@ const char index_html[] PROGMEM = R"rawliteral(
       transition: all 0.5s ease;
       position: relative;
     }
-    
     .popup-overlay.active .popup-content {
       transform: translateY(0);
       opacity: 1;
     }
-    
     /* Blur effect for main content when popup is active */
     body.popup-active .container {
       filter: blur(3px);
     }
-    
     .popup-header {
       display: flex;
       justify-content: space-between;
@@ -315,13 +300,11 @@ const char index_html[] PROGMEM = R"rawliteral(
       padding-bottom: 10px;
       border-bottom: 2px solid #eee;
     }
-    
     .popup-header h3 {
       margin: 0;
       color: #333;
       font-size: 20px;
     }
-    
     .popup-close {
       background: none;
       border: none;
@@ -336,11 +319,9 @@ const char index_html[] PROGMEM = R"rawliteral(
       border-radius: 50%;
       transition: background-color 0.3s;
     }
-    
     .popup-close:hover {
       background-color: #f8f9fa;
     }
-    
     .popup-message {
       padding: 15px;
       border-radius: 8px;
@@ -348,46 +329,38 @@ const char index_html[] PROGMEM = R"rawliteral(
       text-align: center;
       font-weight: bold;
     }
-    
     .popup-success {
       background-color: #d4edda;
       color: #155724;
       border: 1px solid #c3e6cb;
     }
-    
     .popup-error {
       background-color: #f8d7da;
       color: #721c24;
       border: 1px solid #f5c6cb;
     }
-    
     .popup-data {
       background-color: #f8f9fa;
       border-radius: 8px;
       padding: 15px;
       margin-bottom: 15px;
     }
-    
     .popup-data-item {
       display: flex;
       justify-content: space-between;
       padding: 8px 0;
       border-bottom: 1px solid #eee;
     }
-    
     .popup-data-item:last-child {
       border-bottom: none;
     }
-    
     .popup-data-label {
       font-weight: bold;
       color: #555;
     }
-    
     .popup-data-value {
       color: #333;
     }
-    
     .popup-code {
       font-family: monospace;
       background-color: #e9ecef;
@@ -395,7 +368,6 @@ const char index_html[] PROGMEM = R"rawliteral(
       border-radius: 4px;
       font-weight: normal;
     }
-    
     .popup-timer {
       text-align: center;
       font-size: 12px;
@@ -409,7 +381,6 @@ const char index_html[] PROGMEM = R"rawliteral(
     <header>
       <h1>|RF Control Panel</h1>
     </header>
-
     <div class="content">
       <!-- Stav pamäte -->
       <div class="section">
@@ -419,7 +390,6 @@ const char index_html[] PROGMEM = R"rawliteral(
           <div class="progress-bar" id="progressBar" style="width:0%">0%</div>
         </div>
       </div>
-
       <!-- Manuálny vstup -->
       <div class="section">
         <h2>🔧 Manuálny vstup kódu</h2>
@@ -431,7 +401,6 @@ const char index_html[] PROGMEM = R"rawliteral(
           <strong>Príklad:</strong> 1234567 – OK | abc123 – ZLE | 0.5 – ZLE
         </div>
       </div>
-
       <!-- Prijímanie s menom -->
       <div class="section">
         <h2>📥 Prijímanie a ukladanie</h2>
@@ -440,20 +409,16 @@ const char index_html[] PROGMEM = R"rawliteral(
           <button onclick="receiveAndSave()" id="receiveBtn">Receive & Save</button>
         </div>
         <button onclick="clearAllCodes()" class="danger">Vymazať všetky kódy</button>
-
         <!-- Progress bar pri prijímaní -->
         <div class="receive-progress">
           <div class="receive-fill" id="receiveFill"></div>
         </div>
-
         <!-- Názov vizualizácie -->
         <h3>|RF Spektrálna analýza</h3>
-
         <!-- Spektrálna vizualizácia -->
         <div class="signal-animation">
           <canvas id="spectrumCanvas"></canvas>
         </div>
-
         <!-- Frekvenčná mierka -->
         <div class="frequency-scale">
           <span>433.0</span>
@@ -463,7 +428,6 @@ const char index_html[] PROGMEM = R"rawliteral(
           <span>434.6</span>
         </div>
       </div>
-
       <!-- Odosielanie -->
       <div class="section">
         <h2>📤 Odoslanie kódu</h2>
@@ -472,7 +436,6 @@ const char index_html[] PROGMEM = R"rawliteral(
         <button onclick="startTransmitLoopWithValidation()">Transmit Loop (ON)</button>
         <button onclick="stopTransmitLoop()" class="danger">Stop Loop</button>
       </div>
-
       <!-- Zoznam kódov -->
       <div class="section">
         <h2>💾 Uložené kódy</h2>
@@ -480,11 +443,9 @@ const char index_html[] PROGMEM = R"rawliteral(
           Načítavam...
         </div>
       </div>
-
       <div id="message" class="message"></div>
     </div>
   </div>
-
   <!-- Popup Overlay -->
   <div id="popupOverlay" class="popup-overlay">
     <div class="popup-content">
@@ -514,7 +475,6 @@ const char index_html[] PROGMEM = R"rawliteral(
       <div class="popup-timer">Okno sa automaticky zatvorí za <span id="popupTimer">5</span> sekúnd</div>
     </div>
   </div>
-
   <script>
     let loopInterval = null;
     let canvas, ctx;
@@ -525,6 +485,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     let popupTimerValue = 5;
     let isCurrentlyReceiving = false;  // Nová premenná na sledovanie stavu prijímania
     let pendingReceiveName = "";  // Uloženie názvu pre aktuálne prijímanie
+    let previousCodeCount = 0; // Premenná na sledovanie počtu kódov pred prijímaním
 
     function showMessage(text, isError = false) {
       const msg = document.getElementById('message');
@@ -556,12 +517,10 @@ const char index_html[] PROGMEM = R"rawliteral(
     function simulateSpectrum() {
       const barCount = 128;
       const data = new Array(barCount);
-
       // Základný šum
       for (let i = 0; i < barCount; i++) {
         data[i] = Math.random() * 20 + 5;
       }
-
       // Signál bol zachytený
       if (window.lastSignalReceived) {
         const pos = Math.floor(Math.random() * (barCount - 15));
@@ -570,10 +529,8 @@ const char index_html[] PROGMEM = R"rawliteral(
         }
         window.lastSignalReceived = false;
       }
-
       spectrumData = new Uint8Array(data);
       drawSpectrum();
-
       setTimeout(simulateSpectrum, 100);
     }
 
@@ -581,18 +538,14 @@ const char index_html[] PROGMEM = R"rawliteral(
       const width = canvas.offsetWidth;
       const height = canvas.offsetHeight;
       const barWidth = width / spectrumData.length;
-
       ctx.clearRect(0, 0, width, height);
-
       for (let i = 0; i < spectrumData.length; i++) {
         const v = spectrumData[i];
         const barHeight = (v / 100) * height;
-
         let r, g, b;
         if (v < 30) { r = 0; g = 200; b = 0; }
         else if (v < 60) { r = 255; g = 200; b = 0; }
         else { r = 255; g = 0; b = 0; }
-
         ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
         ctx.fillRect(i * barWidth, height - barHeight, barWidth - 1, barHeight);
       }
@@ -606,10 +559,10 @@ const char index_html[] PROGMEM = R"rawliteral(
       const titleDiv = document.getElementById('popupTitle');
       const statusRow = document.getElementById('popupStatusRow');
       const statusDiv = document.getElementById('popupStatus');
-      
+
       // Set title
       titleDiv.textContent = title;
-      
+
       // Set message and style
       if (isSuccess) {
         messageDiv.textContent = data?.message || 'Operácia úspešne dokončená!';
@@ -618,14 +571,13 @@ const char index_html[] PROGMEM = R"rawliteral(
         messageDiv.textContent = data?.message || 'Chyba: Operácia zlyhala!';
         messageDiv.className = 'popup-message popup-error';
       }
-      
+
       // Show or hide data section
       if (data && data.code !== undefined) {
         dataDiv.style.display = 'block';
         document.getElementById('popupCode').textContent = data.code;
         document.getElementById('popupName').textContent = data.name || 'Nezmenovaný';
         document.getElementById('popupFrequency').textContent = data.frequency || '433.92 MHz';
-        
         // Show status if available
         if (data.status) {
           statusRow.style.display = 'flex';
@@ -637,30 +589,29 @@ const char index_html[] PROGMEM = R"rawliteral(
         dataDiv.style.display = 'none';
         statusRow.style.display = 'none';
       }
-      
+
       // Show popup with animation
       document.querySelector('.container').style.filter = 'blur(3px)';
       overlay.classList.add('active');
-      
+
       // Reset timer
       popupTimerValue = 5;
       document.getElementById('popupTimer').textContent = popupTimerValue;
-      
+
       // Clear any existing timer
       if (popupTimerInterval) {
         clearInterval(popupTimerInterval);
       }
-      
+
       // Start countdown timer
       popupTimerInterval = setInterval(() => {
         popupTimerValue--;
         document.getElementById('popupTimer').textContent = popupTimerValue;
-        
         if (popupTimerValue <= 0) {
           closePopup();
         }
       }, 1000);
-      
+
       // Auto-hide after 5 seconds
       if (popupTimeout) {
         clearTimeout(popupTimeout);
@@ -672,12 +623,10 @@ const char index_html[] PROGMEM = R"rawliteral(
       const overlay = document.getElementById('popupOverlay');
       overlay.classList.remove('active');
       document.querySelector('.container').style.filter = 'none';
-      
       if (popupTimeout) {
         clearTimeout(popupTimeout);
         popupTimeout = null;
       }
-      
       if (popupTimerInterval) {
         clearInterval(popupTimerInterval);
         popupTimerInterval = null;
@@ -690,24 +639,19 @@ const char index_html[] PROGMEM = R"rawliteral(
       if (!codeStr || codeStr.trim() === '') {
         return { isValid: false, message: 'Kód nesmie byť prázdny!' };
       }
-      
       // Check if contains only digits
       if (!/^\d+$/.test(codeStr)) {
         return { isValid: false, message: 'Kód môže obsahovať iba číslice (0-9)!' };
       }
-      
       // Convert to number
       const code = parseInt(codeStr, 10);
-      
       // Check range
       if (code <= 0) {
         return { isValid: false, message: 'Kód musí byť väčší ako 0!' };
       }
-      
       if (code > 16777215) {
         return { isValid: false, message: 'Kód presahuje maximálnu hodnotu 16777215 (24-bitový limit)!' };
       }
-      
       return { isValid: true, code: code, message: 'Kód je platný!' };
     }
 
@@ -715,19 +659,18 @@ const char index_html[] PROGMEM = R"rawliteral(
     function validateAndSaveManualCode() {
       const codeInput = document.getElementById('codeInput');
       const codeStr = codeInput.value.trim();
-      
+
       // Validate code
       const validationResult = validateCode(codeStr);
-      
       if (!validationResult.isValid) {
         // Show error popup
         showPopup('Chyba validácie kódu', false, { message: validationResult.message });
         return;
       }
-      
+
       const code = validationResult.code;
       const savedName = "Saved: " + code;  // Názov podľa požiadavky
-      
+
       // Code is valid, prepare data for popup
       const signalData = {
         code: code,
@@ -737,10 +680,10 @@ const char index_html[] PROGMEM = R"rawliteral(
         message: 'Kód bol úspešne overený a uložený!',
         status: 'Uložené do pamäte'
       };
-      
+
       // Show success popup
       showPopup('Manuálny kód', true, signalData);
-      
+
       // Save to server
       fetch('/saveManual', {
         method: 'POST',
@@ -763,18 +706,17 @@ const char index_html[] PROGMEM = R"rawliteral(
     function transmitCodeWithValidation() {
       const codeInput = document.getElementById('codeInput');
       const codeStr = codeInput.value.trim();
-      
+
       // Validate code
       const validationResult = validateCode(codeStr);
-      
       if (!validationResult.isValid) {
         // Show error popup
         showPopup('Chyba pri odosielaní', false, { message: validationResult.message });
         return;
       }
-      
+
       const code = validationResult.code;
-      
+
       // Show transmission popup
       const transmitData = {
         code: code,
@@ -784,9 +726,9 @@ const char index_html[] PROGMEM = R"rawliteral(
         message: 'Kód bol úspešne odoslaný!',
         status: 'Odoslané cez RF'
       };
-      
+
       showPopup('RF Odosielanie', true, transmitData);
-      
+
       // Send to server
       fetch('/transmit', {
         method: 'POST',
@@ -807,18 +749,17 @@ const char index_html[] PROGMEM = R"rawliteral(
     function transmit3TimesWithValidation() {
       const codeInput = document.getElementById('codeInput');
       const codeStr = codeInput.value.trim();
-      
+
       // Validate code
       const validationResult = validateCode(codeStr);
-      
       if (!validationResult.isValid) {
         // Show error popup
         showPopup('Chyba pri odosielaní', false, { message: validationResult.message });
         return;
       }
-      
+
       const code = validationResult.code;
-      
+
       // Show transmission popup
       const transmitData = {
         code: code,
@@ -828,9 +769,9 @@ const char index_html[] PROGMEM = R"rawliteral(
         message: 'Kód bol úspešne odoslaný 3 krát!',
         status: 'Odoslané 3x cez RF'
       };
-      
+
       showPopup('RF Odosielanie', true, transmitData);
-      
+
       // Send to server
       fetch('/transmit3', {
         method: 'POST',
@@ -851,18 +792,17 @@ const char index_html[] PROGMEM = R"rawliteral(
     function startTransmitLoopWithValidation() {
       const codeInput = document.getElementById('codeInput');
       const codeStr = codeInput.value.trim();
-      
+
       // Validate code
       const validationResult = validateCode(codeStr);
-      
       if (!validationResult.isValid) {
         // Show error popup
         showPopup('Chyba pri odosielaní', false, { message: validationResult.message });
         return;
       }
-      
+
       const code = validationResult.code;
-      
+
       // Show transmission popup
       const transmitData = {
         code: code,
@@ -872,9 +812,9 @@ const char index_html[] PROGMEM = R"rawliteral(
         message: 'Loop odosielania bol spustený!',
         status: 'Opakované odosielanie'
       };
-      
+
       showPopup('RF Odosielanie', true, transmitData);
-      
+
       // Send to server
       fetch('/transmit', {
         method: 'POST',
@@ -885,7 +825,6 @@ const char index_html[] PROGMEM = R"rawliteral(
       .then(data => {
         console.log('Loop odosielania spustený:', data);
         showMessage('Loop odosielania spustený pre kód ' + code + '!');
-        
         // Start local loop simulation
         if (loopInterval) clearInterval(loopInterval);
         loopInterval = setInterval(() => {
@@ -914,10 +853,8 @@ const char index_html[] PROGMEM = R"rawliteral(
       // Nastavíme globálne premenné pre aktuálne prijímanie
       isCurrentlyReceiving = true;
       pendingReceiveName = name;
-      
       btn.disabled = true;
       btn.textContent = 'Prijímanie...';
-
       fill.style.width = '0%';
 
       let elapsed = 0;
@@ -927,20 +864,21 @@ const char index_html[] PROGMEM = R"rawliteral(
         const percent = Math.round((elapsed / 3000) * 100);
         fill.style.width = percent + '%';
 
-        // Po 3 sekundách ukončíme prijímanie
+        // Po 3 sekundách ukončíme prijímanie a zrušíme progress bar
         if (elapsed >= 3000) {
           clearInterval(interval);
           if (isCurrentlyReceiving) {
             isCurrentlyReceiving = false;
             btn.disabled = false;
             btn.textContent = 'Receive & Save';
-            showPopup('RF Prijímanie', false, { 
-              message: 'Signál nebol zachytený. Skúste to znova.' 
-            });
+            // NEZOBRAZUJEME CHYBOVÝ POPUP TU, PRETOŽE SIGNÁL SA MOHOL ZACHYTIŤ NESKÔR
+            // Namiesto toho spustíme kontrolu zoznamu kódov
+            checkForNewCodeAfterReceive();
           }
         }
       }, 100);
 
+      // Odoslanie požiadavky na server
       fetch('/receive', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -958,398 +896,45 @@ const char index_html[] PROGMEM = R"rawliteral(
       });
     }
 
-    // Detekcia signálu - KOMPLETNÁ OPRAVA
-    let signalDetectionAttempts = 0;
-    let lastSignalCode = null;
-
-    function checkForSignal() {
-      if (!isCurrentlyReceiving) return;
-      
-      fetch('/lastSignal')
-        .then(r => {
-          if (!r.ok) throw new Error('Network response was not ok');
-          return r.json();
-        })
-        .then(data => {
-          // Kontrolujeme, či sa zachytil signál a či má platný kód
-          if (data.received && data.code && data.code > 0) {
-            window.lastSignalReceived = true;
-            lastSignalCode = data.code;
-            
-            // Aktualizujeme spektrálnu analýzu - pridáme signál
-            if (spectrumData && spectrumData.length > 0) {
-              // Náhodná pozícia pre signál
-              const pos = Math.floor(Math.random() * (spectrumData.length - 15));
-              // Vytvoríme silný signál
-              for (let i = 0; i < 15; i++) {
-                spectrumData[pos + i] = 80 + Math.random() * 20;
-              }
-              // Prekreslíme spektrum
-              if (canvas && ctx) {
-                drawSpectrum();
-              }
-            }
-            
-            // Zrušíme progress bar a tlačidlo
-            const btn = document.getElementById('receiveBtn');
-            const fill = document.getElementById('receiveFill');
-            if (btn) {
-              btn.disabled = false;
-              btn.textContent = 'Receive & Save';
-            }
-            if (fill) {
-              fill.style.width = '100%';
-            }
-            
-            // Použijeme názov, ktorý bol nastavený pri spustení prijímania
-            const signalName = pendingReceiveName || 'Nezmenovaný';
-            
-            // Okamžite zobrazíme popup s reálnym kódom
+    // === NOVÁ FUNKCIA NA KONTROLU, ČI SA PO PRIJÍMANÍ ULOŽIL NOVÝ KÓD ===
+    function checkForNewCodeAfterReceive() {
+      // Najskôr získame aktuálny počet kódov
+      fetch('/list')
+        .then(res => res.json())
+        .then(codes => {
+          const currentCodeCount = codes.length;
+          if (currentCodeCount > previousCodeCount) {
+            // Počet kódov sa zvýšil, znamená to, že sa niečo uložilo
+            previousCodeCount = currentCodeCount; // Aktualizujeme počítadlo
+            updateCodesList(); // Aktualizujeme UI
+            // Získame posledný kód (predpokladáme, že je nový)
+            const lastCode = codes[codes.length - 1];
             const signalData = {
-              code: data.code,
-              name: signalName,
+              code: lastCode.code,
+              name: lastCode.name,
               frequency: '433.92 MHz',
-              timestamp: new Date().toLocaleTimeString(),
               message: 'Signál úspešne zachytený a uložený!'
             };
-            
             showPopup('RF Prijímanie', true, signalData);
-            
-            // Označíme, že prijímanie bolo úspešné
-            isCurrentlyReceiving = false;
-            
-            // Resetujeme počítadlo pokusov
-            signalDetectionAttempts = 0;
-            
-            // Update codes list after successful receive
-            setTimeout(updateCodesList, 1000);
           } else {
-            // Ak sme nenašli signál, zvýšime počítadlo pokusov
-            signalDetectionAttempts++;
-            
-            // Ak sme už skúsili 15x a stále nič, ukončíme prijímanie
-            if (signalDetectionAttempts > 15 && isCurrentlyReceiving) {
-              isCurrentlyReceiving = false;
-              const btn = document.getElementById('receiveBtn');
-              if (btn) {
-                btn.disabled = false;
-                btn.textContent = 'Receive & Save';
-              }
-              showPopup('RF Prijímanie', false, { 
-                message: 'Signál nebol zachytený. Skúste to znova.' 
-              });
-            }
-          }
-        })
-        .catch((error) => {
-          console.error('Chyba pri kontrole signálu:', error);
-          signalDetectionAttempts++;
-        });
-    }
-
-    // Spúšťame kontrolu signálu každých 150ms
-    setInterval(checkForSignal, 150);
-
-    // === Zvyšok funkcii === - KOMPLETNÁ OPRAVA pre vymazávanie kódov
-    function deleteCode(code) {
-      // Použijeme globálnu premennú s kódmi, ktorú udržiavame aktuálnu
-      let codeName = 'Nezmenovaný';
-      
-      // Najprv skúsime nájsť názov v lokálnom zozname
-      if (window.currentCodes && window.currentCodes.length > 0) {
-        const foundCode = window.currentCodes.find(item => item.code === code);
-        if (foundCode) {
-          codeName = foundCode.name;
-        }
-      }
-      
-      // Ak sme nenašli v lokálnom zozname, načítame zo servera
-      if (codeName === 'Nezmenovaný') {
-        fetch('/list')
-          .then(res => {
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            return res.json();
-          })
-          .then(codes => {
-            // Uložíme aktuálny zoznam kódov do globálnej premennej
-            window.currentCodes = codes;
-            
-            // Nájdeme kód, ktorý sa má vymazať
-            const codeToDelete = codes.find(item => item.code === code);
-            codeName = codeToDelete ? codeToDelete.name : 'Nezmenovaný';
-            
-            showDeleteConfirmation(code, codeName);
-          })
-          .catch(err => {
-            console.error('Chyba pri načítaní kódov:', err);
-            showDeleteConfirmation(code, 'Kód č. ' + code);
-          });
-      } else {
-        // Ak sme už mali názov, môžeme rovno zobraziť potvrdenie
-        showDeleteConfirmation(code, codeName);
-      }
-    }
-
-    function showDeleteConfirmation(code, codeName) {
-      if (confirm('Vymazať tento kód: ' + codeName + '?')) {
-        fetch('/delete?code=' + code, { method: 'GET' })
-          .then(() => {
-            showMessage('Kód "' + codeName + '" úspešne vymazaný');
-            updateCodesList();
-            
-            // Show popup for deletion with correct name
-            const deleteData = {
-              code: code,
-              name: codeName,
-              message: 'Kód bol úspešne vymazaný!',
-              status: 'Vymazané z pamäte'
-            };
-            
-            showPopup('Správa systému', true, deleteData);
-          })
-          .catch(err => {
-            showMessage('Chyba pri vymazávaní kódu!', true);
-          });
-      }
-    }
-
-    // Upravíme funkciu updateCodesList, aby udržiavala globálnu premennú
-    function updateCodesList() {
-      const list = document.getElementById('codesList');
-      list.innerHTML = '<p>Načítavam...</p>';
-
-      fetch('/list')
-        .then(res => {
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.json();
-        })
-        .then(codes => {
-          // Uložíme aktuálny zoznam do globálnej premennej
-          window.currentCodes = codes;
-          
-          list.innerHTML = '';
-          updateMemoryUsage(codes.length);
-
-          if (codes.length === 0) {
-            list.innerHTML = '<p>Žiadne uložené kódy.</p>';
-            return;
-          }
-          codes.forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'code-item';
-            div.dataset.code = item.code;
-
-            div.innerHTML = `
-              <div class="code-info">
-                <div><strong id="name-${item.code}">${item.name}</strong></div>
-                <div style="font-family:monospace;color:#c0392b">Kód: ${item.code}</div>
-                <input type="text" id="edit-${item.code}" value="${item.name}" 
-                      style="display:none;margin-top:4px;padding:5px;width:100%" />
-              </div>
-              <div class="code-actions">
-                <button onclick="useCode(${item.code})" title="Použiť">📋</button>
-                <button onclick="sendStored(${item.code})" title="Odoslať">📤</button>
-                <button onclick="startEdit(${item.code})" title="Upraviť">✎</button>
-                <button onclick="saveEdit(${item.code})" style="display:none" title="Uložiť">✔️</button>
-                <button onclick="deleteCode(${item.code})" class="danger" title="Vymazať">🗑️</button>
-              </div>
-            `;
-            list.appendChild(div);
-          });
-        })
-        .catch(err => {
-          list.innerHTML = '<p style="color:red">Chyba: ' + err.message + '</p>';
-          console.error('Fetch error:', err);
-        });
-    }
-
-    // Detekcia signálu - OPRAVENÉ
-    let lastProcessedCode = null;  // Pridaná premenná na sledovanie už spracovaného kódu
-
-    setInterval(() => {
-      fetch('/lastSignal')
-        .then(r => r.json())
-        .then(data => {
-          if (data.received && data.code && data.code > 0 && data.code !== lastProcessedCode) {
-            window.lastSignalReceived = true;
-            lastProcessedCode = data.code;  // Označíme kód ako spracovaný
-            
-            // Zrušíme progress bar a tlačidlo
-            const btn = document.getElementById('receiveBtn');
-            const fill = document.getElementById('receiveFill');
-            if (btn) {
-              btn.disabled = false;
-              btn.textContent = 'Receive & Save';
-            }
-            if (fill) {
-              fill.style.width = '100%';
-            }
-            
-            // Použijeme názov, ktorý bol nastavený pri spustení prijímania
-            const signalName = pendingReceiveName || 'Nezmenovaný';
-            
-            // Okamžite zobrazíme popup s reálnym kódom
-            const signalData = {
-              code: data.code,
-              name: signalName,
-              frequency: '433.92 MHz',
-              timestamp: new Date().toLocaleTimeString(),
-              message: 'Signál úspešne zachytený a uložený!'
-            };
-            
-            showPopup('RF Prijímanie', true, signalData);
-            
-            // Označíme, že prijímanie bolo úspešné
-            isCurrentlyReceiving = false;
-            
-            // Update codes list after successful receive
-            setTimeout(updateCodesList, 1000);
-            
-            // Po 5 sekundách resetujeme lastProcessedCode, aby sa mohol znova prijať rovnaký kód
-            setTimeout(() => {
-              lastProcessedCode = null;
-            }, 5000);
-          }
-        })
-        .catch((error) => {
-          console.error('Chyba pri kontrole signálu:', error);
-        });
-    }, 200);  // Kontrolujeme ešte častejšie - každých 200ms
-
-    // === Zvyšok funkcii === - OPRAVA pre vymazávanie kódov
-    function deleteCode(code) {
-      // Najprv získame aktuálny zoznam kódov, aby sme mohli zobraziť správny názov
-      fetch('/list')
-        .then(res => {
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.json();
-        })
-        .then(codes => {
-          // Nájdeme kód, ktorý sa má vymazať
-          const codeToDelete = codes.find(item => item.code === code);
-          const codeName = codeToDelete ? codeToDelete.name : 'Nezmenovaný';
-          
-          if (confirm('Vymazať tento kód: ' + codeName + '?')) {
-            fetch('/delete?code=' + code, { method: 'GET' })
-              .then(() => {
-                showMessage('Kód vymazaný');
-                updateCodesList();
-                
-                // Show popup for deletion with correct name
-                const deleteData = {
-                  code: code,
-                  name: codeName,  // Použijeme skutočný názov kódu
-                  message: 'Kód bol úspešne vymazaný!',
-                  status: 'Vymazané z pamäte'
-                };
-                
-                showPopup('Správa systému', true, deleteData);
-              });
+            // Po 3 sekundách sa nič neuložilo, zobrazíme chybu
+            showPopup('RF Prijímanie', false, { 
+              message: 'Signál nebol zachytený. Skúste to znova.' 
+            });
           }
         })
         .catch(err => {
-          console.error('Chyba pri načítaní kódov:', err);
-          // Ak sa nepodarí načítať názov, použijeme záložný prístup
-          if (confirm('Vymazať tento kód?')) {
-            fetch('/delete?code=' + code, { method: 'GET' })
-              .then(() => {
-                showMessage('Kód vymazaný');
-                updateCodesList();
-                
-                const deleteData = {
-                  code: code,
-                  name: 'Kód č. ' + code,  // Záložný názov
-                  message: 'Kód bol úspešne vymazaný!',
-                  status: 'Vymazané z pamäte'
-                };
-                
-                showPopup('Správa systému', true, deleteData);
-              });
-          }
+          console.error('Chyba pri kontrole nového kódu:', err);
+          showPopup('RF Prijímanie', false, { 
+            message: 'Signál nebol zachytený. Skúste to znova.' 
+          });
         });
     }
-
-    // Detekcia signálu - OPRAVENÉ
-    setInterval(() => {
-      // Kontrolujeme vždy, nie len keď isCurrentlyReceiving = true
-      fetch('/lastSignal')
-        .then(r => r.json())
-        .then(data => {
-          if (data.received && data.code && data.code > 0) {
-            window.lastSignalReceived = true;
-            
-            // Zrušíme progress bar a tlačidlo
-            const btn = document.getElementById('receiveBtn');
-            const fill = document.getElementById('receiveFill');
-            if (btn) {
-              btn.disabled = false;
-              btn.textContent = 'Receive & Save';
-            }
-            if (fill) {
-              fill.style.width = '100%';
-            }
-            
-            // Okamžite zobrazíme popup s reálnym kódom
-            const signalData = {
-              code: data.code,
-              name: document.getElementById('nameInput').value.trim() || 'Nezmenovaný',
-              frequency: '433.92 MHz',
-              timestamp: new Date().toLocaleTimeString(),
-              message: 'Signál úspešne zachytený a uložený!'
-            };
-            
-            showPopup('RF Prijímanie', true, signalData);
-            
-            // Označíme, že prijímanie bolo úspešné
-            isCurrentlyReceiving = false;
-            
-            // Update codes list after successful receive
-            setTimeout(updateCodesList, 1000);
-          }
-        })
-        .catch((error) => {
-          console.error('Chyba pri kontrole signálu:', error);
-        });
-    }, 300);  // Kontrolujeme ešte častejšie - každých 300ms
-
-    // Detekcia signálu - OPRAVENÉ
-    setInterval(() => {
-      if (!isCurrentlyReceiving) return;  // Kontrolujeme iba ak aktuálne prijímame
-      
-      fetch('/lastSignal')
-        .then(r => r.json())
-        .then(data => {
-          if (data.received && data.code && data.code > 0) {
-            window.lastSignalReceived = true;
-            
-            // Okamžite zobrazíme popup s reálnym kódom
-            const signalData = {
-              code: data.code,
-              name: pendingReceiveName,
-              frequency: '433.92 MHz',
-              timestamp: new Date().toLocaleTimeString(),
-              message: 'Signál úspešne zachytený a uložený!'
-            };
-            
-            showPopup('RF Prijímanie', true, signalData);
-            
-            // Označíme, že prijímanie bolo úspešné
-            isCurrentlyReceiving = false;
-            
-            // Update codes list after successful receive
-            setTimeout(updateCodesList, 1000);
-          }
-        })
-        .catch((error) => {
-          console.error('Chyba pri kontrole signálu:', error);
-        });
-    }, 500);  // Kontrolujeme častejšie - každých 500ms
 
     // === Zvyšok funkcii ===
     function updateCodesList() {
       const list = document.getElementById('codesList');
       list.innerHTML = '<p>Načítavam...</p>';
-
       fetch('/list')
         .then(res => {
           if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1358,7 +943,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         .then(codes => {
           list.innerHTML = '';
           updateMemoryUsage(codes.length);
-
+          previousCodeCount = codes.length; // <-- DÔLEŽITÉ: Aktualizujeme globálne počítadlo
           if (codes.length === 0) {
             list.innerHTML = '<p>Žiadne uložené kódy.</p>';
             return;
@@ -1367,7 +952,6 @@ const char index_html[] PROGMEM = R"rawliteral(
             const div = document.createElement('div');
             div.className = 'code-item';
             div.dataset.code = item.code;
-
             div.innerHTML = `
               <div class="code-info">
                 <div><strong id="name-${item.code}">${item.name}</strong></div>
@@ -1431,13 +1015,11 @@ const char index_html[] PROGMEM = R"rawliteral(
       if (loopInterval) clearInterval(loopInterval);
       loopInterval = null;
       showMessage('Loop zastavený');
-      
       // Show popup for stopping loop
       const stopData = {
         message: 'Loop odosielania bol zastavený!',
         status: 'Odosielanie zastavené'
       };
-      
       showPopup('RF Odosielanie', true, stopData);
     }
 
@@ -1447,14 +1029,12 @@ const char index_html[] PROGMEM = R"rawliteral(
           .then(() => {
             showMessage('Kód vymazaný');
             updateCodesList();
-            
             // Show popup for deletion
             const deleteData = {
               code: code,
               message: 'Kód bol úspešne vymazaný!',
               status: 'Vymazané z pamäte'
             };
-            
             showPopup('Správa systému', true, deleteData);
           });
       }
@@ -1466,13 +1046,11 @@ const char index_html[] PROGMEM = R"rawliteral(
           .then(() => {
             showMessage('Všetko vymazané');
             updateCodesList();
-            
             // Show popup for clearing all codes
             const clearData = {
               message: 'Všetky kódy boli úspešne vymazané!',
               status: 'Pamäť vyčistená'
             };
-            
             showPopup('Správa systému', true, clearData);
           });
       }
@@ -1481,7 +1059,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     // Spusti
     initSpectrum();
     updateCodesList();
-    
+
     // Add event listener for popup close button
     document.getElementById('popupOverlay').addEventListener('click', function(e) {
       if (e.target === this) {
@@ -1500,9 +1078,7 @@ void loadCodesFromEEPROM() {
   for (int i = 0; i < MAX_CODES; i++) {
     CodeItem item;
     EEPROM.get(i * CODE_ITEM_SIZE, item);
-
     if (item.code == 0 || item.code == 0xFFFFFFFF) break;
-
     bool valid = false;
     for (int j = 0; j < 32; j++) {
       char c = item.name[j];
@@ -1510,7 +1086,6 @@ void loadCodesFromEEPROM() {
       if (c >= 32 && c <= 126) valid = true;
     }
     if (!valid) strcpy(item.name, "Nezmenovaný");
-
     savedCodes[codeCount++] = item;
   }
   EEPROM.end();
@@ -1529,22 +1104,18 @@ void saveCodeToEEPROM(long code, const char* name) {
   item.code = code;
   strncpy(item.name, name, 32);
   item.name[32] = '\0';
-
   EEPROM.begin(EEPROM_SIZE);
   EEPROM.put(codeCount * CODE_ITEM_SIZE, item);
   EEPROM.commit();
   EEPROM.end();
-
   savedCodes[codeCount++] = item;
 }
 
 void updateNameInEEPROM(long code, const char* newName) {
   int index = findCodeIndex(code);
   if (index == -1) return;
-
   strncpy(savedCodes[index].name, newName, 32);
   savedCodes[index].name[32] = '\0';
-
   EEPROM.begin(EEPROM_SIZE);
   EEPROM.put(index * CODE_ITEM_SIZE, savedCodes[index]);
   EEPROM.commit();
@@ -1554,13 +1125,11 @@ void updateNameInEEPROM(long code, const char* newName) {
 void deleteCodeFromEEPROM(long code) {
   int index = findCodeIndex(code);
   if (index == -1) return;
-
   EEPROM.begin(EEPROM_SIZE);
   for (int i = index; i < codeCount - 1; i++) {
     savedCodes[i] = savedCodes[i + 1];
   }
   codeCount--;
-
   for (int i = 0; i < MAX_CODES; i++) {
     if (i < codeCount) {
       EEPROM.put(i * CODE_ITEM_SIZE, savedCodes[i]);
@@ -1591,7 +1160,6 @@ void printEEPROMStatus() {
   float percent = (float)used / total * 100;
   int usedBytes = used * CODE_ITEM_SIZE;
   int totalBytes = EEPROM_SIZE;
-
   Serial.println("\n--- EEPROM Stav ---");
   Serial.printf("Kódy: %d / %d (%.1f %%)\n", used, total, percent);
   Serial.printf("Záznam: %d B\n", CODE_ITEM_SIZE);
@@ -1646,12 +1214,10 @@ void setup() {
         }
       }
       if (cleanName.length() == 0) cleanName = "Nezmenovaný";
-
       json += "{\"name\":\"" + cleanName + "\",\"code\":" + String(savedCodes[i].code) + "}";
       if (i < codeCount - 1) json += ",";
     }
     json += "]";
-
     AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
     response->addHeader("Access-Control-Allow-Origin", "*");
     response->addHeader("Content-Type", "application/json");
@@ -1674,6 +1240,25 @@ void setup() {
     lastValidCode = -1;
     receiveStartTime = millis();
     request->send(200, "text/plain", "Prijímanie (3s)...");
+  });
+
+  // === NOVÝ HANDLER PRE ULOŽENIE MANUÁLNEHO KÓDU ===
+  server.on("/saveManual", HTTP_POST, [](AsyncWebServerRequest *request){
+    if (request->hasParam("code", true) && request->hasParam("name", true)) {
+      long code = request->getParam("code", true)->value().toInt();
+      String name = request->getParam("name", true)->value();
+      // Overenie kódu (voliteľné, ale odporúčané)
+      if (code > 0 && code <= 16777215) {
+        saveCodeToEEPROM(code, name.c_str());
+        Serial.printf("✅ Manuálne uložený kód: %ld (%s)\n", code, name.c_str());
+        printEEPROMStatus();
+        request->send(200, "text/plain", "OK"); // Dôležité: Pošleme OK, aby JS vedel, že to prebehlo úspešne
+      } else {
+        request->send(400, "text/plain", "Neplatný kód");
+      }
+    } else {
+      request->send(400, "text/plain", "Chýbajúce parametre");
+    }
   });
 
   server.on("/transmit", HTTP_POST, [](AsyncWebServerRequest *request){
@@ -1711,9 +1296,7 @@ void setup() {
     if (request->hasParam("code", true) && request->hasParam("name", true)) {
       long code = request->getParam("code", true)->value().toInt();
       String newName = request->getParam("name", true)->value();
-
       updateNameInEEPROM(code, newName.c_str());
-
       request->send(200, "text/plain", "OK");
     } else {
       request->send(400, "text/plain", "Missing parameters");
