@@ -35,6 +35,9 @@
 ---
 
 ### cc1101
+
+  - code DOES NOT WORKS as expected
+
 | cc1101 pins | esp32 pins  |
 | ----------- | ----------- |
 | VCC         | 3.3V        |
