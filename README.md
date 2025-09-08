@@ -32,8 +32,14 @@
 | Pin           | D2          |
 | GND           | GND         |
 
-## <p align="center">how it lookslike ?</p>
+## <p align="center">how it looks like ?</p>
 <p align="center"><img src="images/RF-TechCat-Connection.jpg" alt="On Breadboard" width="400"/></p>
+
+| Tested       | status | works on % |
+| ------       | ------ | ---------- |
+| Receive      | ✅    |  95 - 100  |
+| Transmit     | ✅    |  98 - 100  |
+| Save signal  | ✅    |  100       |
 
 ---
 
@@ -76,7 +82,7 @@
 ## Todo
   - add RollJam with time to set (e.g. 5 seconds, 10, 30, 1 min)
   - add Rolling Codes (From xxxxxxx to xxxxxxxx) --> ```max value for 24 Bit is 16777215 !```
-  ### add support for cc1101
+  ### add ```better & stable``` support for cc1101
 
 ## List of fixed bugz
 | bug name or in short   | Fixed ? | 
