@@ -32,6 +32,11 @@
 | Pin           | D2          |
 | GND           | GND         |
 
+<p align="center">
+  how it lookslike ?
+  <img src="images/RF-TechCat-Connection.jpg" alt="On Breadboard" width="300"/>
+</p>
+
 ---
 
 ### cc1101
@@ -65,9 +70,10 @@
   - [x] Receive & Save signal
   - [x] Transmit signal
   - [x] Store to memory up to 15 signals
-  - [ ] cc1101
+  - [x] & [❌] cc1101 - **unstable**
   - [x] Nice looking Web, easy controling
   - [ ] Supports RollJam
+  - [x] Rolling Codes
 
 ## Todo
   - add RollJam with time to set (e.g. 5 seconds, 10, 30, 1 min)
