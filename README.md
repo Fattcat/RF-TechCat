@@ -35,11 +35,11 @@
 ## <p align="center">how it looks like ?</p>
 <p align="center"><img src="images/RF-TechCat-Connection.jpg" alt="On Breadboard" width="400"/></p>
 
-| Tested       | status | works on % |
-| ------       | ------ | ---------- |
-| Receive      | ✅    |  95 - 100  |
-| Transmit     | ✅    |  98 - 100  |
-| Save signal  | ✅    |  100       |
+| Tested              | status | works on % | additional |
+| ------              | ------ | ---------- | --- |
+| Receive   Strenght  | ✅    |  90 - 100  | Depends on antenna |
+| Transmit  Strenght  | ✅    |  98 - 100  | Depends on antenna |
+| Save signal         | ✅    |  100       | depends on EEPROM |
 
 ---
 
