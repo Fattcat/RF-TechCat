@@ -32,10 +32,8 @@
 | Pin           | D2          |
 | GND           | GND         |
 
-<p align="center">
-  how it lookslike ?
-  <img src="images/RF-TechCat-Connection.jpg" alt="On Breadboard" width="300"/>
-</p>
+## <p align="center">how it lookslike ?</p>
+<p align="center"><img src="images/RF-TechCat-Connection.jpg" alt="On Breadboard" width="400"/></p>
 
 ---
 
