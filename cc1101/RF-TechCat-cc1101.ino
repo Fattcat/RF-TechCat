@@ -2,25 +2,16 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <EEPROM.h>
-// === NOVÉ: CC1101 knižnica ===
-#include <cc1101.h>
+#include <ELECHOUSE_CC1101_SRC_DRV.h> // Používame ELECHOUSE knižnicu
+#include <SPI.h>
+
+// DOES NOT WORKS !
+// it somehow cant receive / transmit captured signal !
+// Unstable, Sometimes esp32 restarts by itself
 
 // === WiFi nastavenia ===
 const char* ssid = "ESP32_Control";
 const char* password = "12345678";
-
-// Connection
-//    CC1101 Module          ESP32 DevKit
-// ┌───────────────┐     ┌─────────────────┐
-// │      VCC      ├─────┤     3.3V        │
-// │      GND      ├─────┤     GND         │
-// │      SCK      ├─────┤     GPIO 18     │
-// │      MISO     ├─────┤     GPIO 19     │
-// │      MOSI     ├─────┤     GPIO 23     │
-// │      CS       ├─────┤     GPIO 5      │
-// │      GDO0     ├─────┤     GPIO 2      │
-// │      GDO2     ├─────┤     GPIO 4      │
-// └───────────────┘     └─────────────────┘
 
 // === CC1101 PINY ===
 #define CC1101_CS_PIN    5
@@ -41,7 +32,6 @@ CodeItem savedCodes[MAX_CODES];
 int codeCount = 0;
 
 // === Globálne premenné ===
-cc1101::CC1101 cc1101;
 AsyncWebServer server(80);
 
 // === WebSocket Server ===
@@ -153,6 +143,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       line-height: 1.6;
       color: #5d4037;
     }
+    /* Progress bar */
     .progress-container {
       width: 100%;
       background: #eee;
@@ -170,6 +161,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       line-height: 20px;
       transition: width 0.1s linear;
     }
+    /* Progress bar pre prijímanie */
     .receive-progress {
       width: 100%;
       height: 10px;
@@ -184,6 +176,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       background: #2980b9;
       transition: width 0.1s linear;
     }
+    /* Canvas spektrálna vizualizácia */
     .signal-animation {
       height: 100px;
       margin: 15px 0;
@@ -209,6 +202,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       opacity: 0.3;
       z-index: 2;
     }
+    /* Frekvenčná mierka */
     .frequency-scale {
       display: flex;
       justify-content: space-between;
@@ -269,6 +263,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       border-radius: 5px;
       display: none;
     }
+    /* Popup styles */
     .popup-overlay {
       position: fixed;
       top: 0;
@@ -304,6 +299,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       transform: translateY(0);
       opacity: 1;
     }
+    /* Blur effect for main content when popup is active */
     body.popup-active .container {
       filter: blur(3px);
     }
@@ -397,6 +393,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       <h1>|RF Control Panel</h1>
     </header>
     <div class="content">
+      <!-- Stav pamäte -->
       <div class="section">
         <h2>📊 Stav pamäte</h2>
         <div>Použité: <span id="usedSlots">0</span> / 20 kódov</div>
@@ -404,6 +401,7 @@ const char index_html[] PROGMEM = R"rawliteral(
           <div class="progress-bar" id="progressBar" style="width:0%">0%</div>
         </div>
       </div>
+      <!-- Manuálny vstup -->
       <div class="section">
         <h2>🔧 Manuálny vstup kódu</h2>
         <input type="text" id="codeInput" placeholder="Zadaj kód (napr. 1234567)" />
@@ -414,6 +412,7 @@ const char index_html[] PROGMEM = R"rawliteral(
           <strong>Príklad:</strong> 1234567 – OK | abc123 – ZLE | 0.5 – ZLE
         </div>
       </div>
+      <!-- Prijímanie s menom -->
       <div class="section">
         <h2>📥 Prijímanie a ukladanie</h2>
         <div class="flex">
@@ -421,13 +420,17 @@ const char index_html[] PROGMEM = R"rawliteral(
           <button onclick="receiveAndSave()" id="receiveBtn">Receive & Save</button>
         </div>
         <button onclick="clearAllCodes()" class="danger">Vymazať všetky kódy</button>
+        <!-- Progress bar pri prijímaní -->
         <div class="receive-progress">
           <div class="receive-fill" id="receiveFill"></div>
         </div>
+        <!-- Názov vizualizácie -->
         <h3>|RF Spektrálna analýza</h3>
+        <!-- Spektrálna vizualizácia -->
         <div class="signal-animation">
           <canvas id="spectrumCanvas"></canvas>
         </div>
+        <!-- Frekvenčná mierka -->
         <div class="frequency-scale">
           <span>433.0</span>
           <span>433.4</span>
@@ -436,6 +439,7 @@ const char index_html[] PROGMEM = R"rawliteral(
           <span>434.6</span>
         </div>
       </div>
+      <!-- Odosielanie -->
       <div class="section">
         <h2>📤 Odoslanie kódu</h2>
         <button onclick="transmitCodeWithValidation()">Transmit</button>
@@ -443,6 +447,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         <button onclick="startTransmitLoopWithValidation()">Transmit Loop (ON)</button>
         <button onclick="stopTransmitLoop()" class="danger">Stop Loop</button>
       </div>
+      <!-- Rolling Codes -->
       <div class="section">
         <h2>🎲 Rolling Codes</h2>
         <div class="flex">
@@ -463,8 +468,10 @@ const char index_html[] PROGMEM = R"rawliteral(
           </ul>
         </div>
       </div>
+      <!-- Live Log Odoslaných Kódov -->
       <div class="section">
         <h2>📡 Live Log Odoslaných Kódov</h2>
+        <!-- Progress Bar -->
         <div style="display: flex; align-items: center; gap: 20px; margin: 15px 0;">
           <div style="position: relative; width: 120px; height: 120px;">
             <svg viewBox="0 0 100 100" style="transform: rotate(-90deg);">
@@ -478,6 +485,7 @@ const char index_html[] PROGMEM = R"rawliteral(
             <div id="progressSubtext" style="font-size: 14px; color: #666;">Celkom: 0/0 kódov</div>
           </div>
         </div>
+        <!-- Log Area -->
         <div id="sendLog" style="height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px; padding: 10px; background: #f8f9fa; font-family: monospace; font-size: 14px; margin: 10px 0;">
           <div style="color: #666;">Žiadne odoslané kódy</div>
         </div>
@@ -485,6 +493,7 @@ const char index_html[] PROGMEM = R"rawliteral(
           🧹 Clear Send codes
         </button>
       </div>
+      <!-- Zoznam kódov -->
       <div class="section">
         <h2>💾 Uložené kódy</h2>
         <div id="codesList" class="codes-list">
@@ -494,6 +503,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       <div id="message" class="message"></div>
     </div>
   </div>
+  <!-- Popup Overlay -->
   <div id="popupOverlay" class="popup-overlay">
     <div class="popup-content">
       <div class="popup-header">
@@ -523,6 +533,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     </div>
   </div>
   <script>
+  // === WebSocket Connection ===
   let ws = null;
   function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -536,11 +547,14 @@ const char index_html[] PROGMEM = R"rawliteral(
         const data = JSON.parse(event.data);
         console.log('WebSocket message received:', data);
         if (data.type === 'roll_start') {
+          // Inicializujeme progress bar
           updateProgress(data.total, 0);
           document.getElementById('progressStatus').textContent = '🔄 Prebieha odosielanie...';
           document.getElementById('progressStatus').style.color = '#3498db';
         } else if (data.type === 'roll_progress') {
+          // Aktualizujeme progress bar
           updateProgress(data.total, data.current);
+          // Pridáme presný kód do logu
           if (data.code !== undefined) {
             addToSendLog(data.code, 'odoslaný');
           }
@@ -549,7 +563,7 @@ const char index_html[] PROGMEM = R"rawliteral(
             showPopup('Rolling Codes', true, { 
               message: `✅ Dokončené! Odoslaných ${data.count} kódov za ${data.duration}s` 
             });
-            updateProgress(data.count, data.count);
+            updateProgress(data.count, data.count); // Nastavíme na 100%
             document.getElementById('progressStatus').textContent = '✅ Dokončené!';
             document.getElementById('progressStatus').style.color = '#27ae60';
           } else {
@@ -573,12 +587,13 @@ const char index_html[] PROGMEM = R"rawliteral(
     };
     ws.onclose = function(event) {
       console.log('WebSocket disconnected, attempting to reconnect...');
-      setTimeout(initWebSocket, 3000);
+      setTimeout(initWebSocket, 3000); // Skúsi znova pripojiť za 3 sekundy
     };
     ws.onerror = function(error) {
       console.error('WebSocket Error:', error);
     };
   }
+  // Spustite WebSocket po načítaní stránky
   window.addEventListener('load', initWebSocket);
     let loopInterval = null;
     let canvas, ctx;
@@ -587,9 +602,10 @@ const char index_html[] PROGMEM = R"rawliteral(
     let popupTimeout = null;
     let popupTimerInterval = null;
     let popupTimerValue = 5;
-    let isCurrentlyReceiving = false;
-    let pendingReceiveName = "";
-    let previousCodeCount = 0;
+    let isCurrentlyReceiving = false;  // Nová premenná na sledovanie stavu prijímania
+    let pendingReceiveName = "";  // Uloženie názvu pre aktuálne prijímanie
+    let previousCodeCount = 0; // Premenná na sledovanie počtu kódov pred prijímaním
+    // === Rolling Codes Control ===
     let isRolling = false;
     let rollingAbortController = null;
     function showMessage(text, isError = false) {
@@ -606,6 +622,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       document.getElementById('progressBar').style.width = percent + '%';
       document.getElementById('progressBar').textContent = percent + '%';
     }
+    // === Canvas spektrálna vizualizácia ===
     function initSpectrum() {
       canvas = document.getElementById('spectrumCanvas');
       ctx = canvas.getContext('2d');
@@ -618,9 +635,11 @@ const char index_html[] PROGMEM = R"rawliteral(
     function simulateSpectrum() {
       const barCount = 128;
       const data = new Array(barCount);
+      // Základný šum
       for (let i = 0; i < barCount; i++) {
         data[i] = Math.random() * 20 + 5;
       }
+      // Signál bol zachytený
       if (window.lastSignalReceived) {
         const pos = Math.floor(Math.random() * (barCount - 15));
         for (let i = 0; i < 15; i++) {
@@ -648,6 +667,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         ctx.fillRect(i * barWidth, height - barHeight, barWidth - 1, barHeight);
       }
     }
+    // === Popup functions ===
     function showPopup(title, isSuccess, data = null) {
       const overlay = document.getElementById('popupOverlay');
       const messageDiv = document.getElementById('popupMessage');
@@ -655,7 +675,9 @@ const char index_html[] PROGMEM = R"rawliteral(
       const titleDiv = document.getElementById('popupTitle');
       const statusRow = document.getElementById('popupStatusRow');
       const statusDiv = document.getElementById('popupStatus');
+      // Set title
       titleDiv.textContent = title;
+      // Set message and style
       if (isSuccess) {
         messageDiv.textContent = data?.message || 'Operácia úspešne dokončená!';
         messageDiv.className = 'popup-message popup-success';
@@ -663,11 +685,13 @@ const char index_html[] PROGMEM = R"rawliteral(
         messageDiv.textContent = data?.message || 'Chyba: Operácia zlyhala!';
         messageDiv.className = 'popup-message popup-error';
       }
+      // Show or hide data section
       if (data && data.code !== undefined) {
         dataDiv.style.display = 'block';
         document.getElementById('popupCode').textContent = data.code;
         document.getElementById('popupName').textContent = data.name || 'Nezmenovaný';
         document.getElementById('popupFrequency').textContent = data.frequency || '433.92 MHz';
+        // Show status if available
         if (data.status) {
           statusRow.style.display = 'flex';
           statusDiv.textContent = data.status;
@@ -678,13 +702,17 @@ const char index_html[] PROGMEM = R"rawliteral(
         dataDiv.style.display = 'none';
         statusRow.style.display = 'none';
       }
+      // Show popup with animation
       document.querySelector('.container').style.filter = 'blur(3px)';
       overlay.classList.add('active');
+      // Reset timer
       popupTimerValue = 5;
       document.getElementById('popupTimer').textContent = popupTimerValue;
+      // Clear any existing timer
       if (popupTimerInterval) {
         clearInterval(popupTimerInterval);
       }
+      // Start countdown timer
       popupTimerInterval = setInterval(() => {
         popupTimerValue--;
         document.getElementById('popupTimer').textContent = popupTimerValue;
@@ -692,6 +720,7 @@ const char index_html[] PROGMEM = R"rawliteral(
           closePopup();
         }
       }, 1000);
+      // Auto-hide after 5 seconds
       if (popupTimeout) {
         clearTimeout(popupTimeout);
       }
@@ -710,14 +739,19 @@ const char index_html[] PROGMEM = R"rawliteral(
         popupTimerInterval = null;
       }
     }
+    // === Validate code function ===
     function validateCode(codeStr) {
+      // Check if empty
       if (!codeStr || codeStr.trim() === '') {
         return { isValid: false, message: 'Kód nesmie byť prázdny!' };
       }
+      // Check if contains only digits
       if (!/^\d+$/.test(codeStr)) {
         return { isValid: false, message: 'Kód môže obsahovať iba číslice (0-9)!' };
       }
+      // Convert to number
       const code = parseInt(codeStr, 10);
+      // Check range
       if (code <= 0) {
         return { isValid: false, message: 'Kód musí byť väčší ako 0!' };
       }
@@ -726,16 +760,20 @@ const char index_html[] PROGMEM = R"rawliteral(
       }
       return { isValid: true, code: code, message: 'Kód je platný!' };
     }
+    // === Manual code validation and save ===
     function validateAndSaveManualCode() {
       const codeInput = document.getElementById('codeInput');
       const codeStr = codeInput.value.trim();
+      // Validate code
       const validationResult = validateCode(codeStr);
       if (!validationResult.isValid) {
+        // Show error popup
         showPopup('Chyba validácie kódu', false, { message: validationResult.message });
         return;
       }
       const code = validationResult.code;
-      const savedName = "Saved: " + code;
+      const savedName = "Saved: " + code;  // Názov podľa požiadavky
+      // Code is valid, prepare data for popup
       const signalData = {
         code: code,
         name: savedName,
@@ -744,7 +782,9 @@ const char index_html[] PROGMEM = R"rawliteral(
         message: 'Kód bol úspešne overený a uložený!',
         status: 'Uložené do pamäte'
       };
+      // Show success popup
       showPopup('Manuálny kód', true, signalData);
+      // Save to server
       fetch('/saveManual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -761,15 +801,19 @@ const char index_html[] PROGMEM = R"rawliteral(
         showMessage('Chyba pri ukladaní kódu!', true);
       });
     }
+    // === Enhanced transmit functions with validation ===
     function transmitCodeWithValidation() {
       const codeInput = document.getElementById('codeInput');
       const codeStr = codeInput.value.trim();
+      // Validate code
       const validationResult = validateCode(codeStr);
       if (!validationResult.isValid) {
+        // Show error popup
         showPopup('Chyba pri odosielaní', false, { message: validationResult.message });
         return;
       }
       const code = validationResult.code;
+      // Show transmission popup
       const transmitData = {
         code: code,
         name: 'Odoslaný kód',
@@ -779,6 +823,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         status: 'Odoslané cez RF'
       };
       showPopup('RF Odosielanie', true, transmitData);
+      // Send to server
       fetch('/transmit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -797,12 +842,15 @@ const char index_html[] PROGMEM = R"rawliteral(
     function transmit3TimesWithValidation() {
       const codeInput = document.getElementById('codeInput');
       const codeStr = codeInput.value.trim();
+      // Validate code
       const validationResult = validateCode(codeStr);
       if (!validationResult.isValid) {
+        // Show error popup
         showPopup('Chyba pri odosielaní', false, { message: validationResult.message });
         return;
       }
       const code = validationResult.code;
+      // Show transmission popup
       const transmitData = {
         code: code,
         name: 'Odoslaný kód (3x)',
@@ -812,6 +860,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         status: 'Odoslané 3x cez RF'
       };
       showPopup('RF Odosielanie', true, transmitData);
+      // Send to server
       fetch('/transmit3', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -830,12 +879,15 @@ const char index_html[] PROGMEM = R"rawliteral(
     function startTransmitLoopWithValidation() {
       const codeInput = document.getElementById('codeInput');
       const codeStr = codeInput.value.trim();
+      // Validate code
       const validationResult = validateCode(codeStr);
       if (!validationResult.isValid) {
+        // Show error popup
         showPopup('Chyba pri odosielaní', false, { message: validationResult.message });
         return;
       }
       const code = validationResult.code;
+      // Show transmission popup
       const transmitData = {
         code: code,
         name: 'Loop odosielania',
@@ -845,6 +897,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         status: 'Opakované odosielanie'
       };
       showPopup('RF Odosielanie', true, transmitData);
+      // Send to server
       fetch('/transmit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -854,6 +907,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       .then(data => {
         console.log('Loop odosielania spustený:', data);
         showMessage('Loop odosielania spustený pre kód ' + code + '!');
+        // Start local loop simulation
         if (loopInterval) clearInterval(loopInterval);
         loopInterval = setInterval(() => {
           fetch('/transmit', {
@@ -871,10 +925,12 @@ const char index_html[] PROGMEM = R"rawliteral(
         showMessage('Chyba pri spustení loopu!', true);
       });
     }
+    // === Progress bar pri prijímaní ===
     function receiveAndSave() {
       const name = document.getElementById('nameInput').value.trim() || 'Nezmenovaný';
       const btn = document.getElementById('receiveBtn');
       const fill = document.getElementById('receiveFill');
+      // Nastavíme globálne premenné pre aktuálne prijímanie
       isCurrentlyReceiving = true;
       pendingReceiveName = name;
       btn.disabled = true;
@@ -886,16 +942,20 @@ const char index_html[] PROGMEM = R"rawliteral(
         elapsed += 100;
         const percent = Math.round((elapsed / 3000) * 100);
         fill.style.width = percent + '%';
+        // Po 3 sekundách ukončíme prijímanie a zrušíme progress bar
         if (elapsed >= 3000) {
           clearInterval(interval);
           if (isCurrentlyReceiving) {
             isCurrentlyReceiving = false;
             btn.disabled = false;
             btn.textContent = 'Receive & Save';
+            // NEZOBRAZUJEME CHYBOVÝ POPUP TU, PRETOŽE SIGNÁL SA MOHOL ZACHYTIŤ NESKÔR
+            // Namiesto toho spustíme kontrolu zoznamu kódov
             checkForNewCodeAfterReceive();
           }
         }
       }, 100);
+      // Odoslanie požiadavky na server
       fetch('/receive', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -912,14 +972,18 @@ const char index_html[] PROGMEM = R"rawliteral(
         showPopup('RF Prijímanie', false, { message: 'Chyba pri prijímaní signálu!' });
       });
     }
+    // === NOVÁ FUNKCIA NA KONTROLU, ČI SA PO PRIJÍMANÍ ULOŽIL NOVÝ KÓD ===
     function checkForNewCodeAfterReceive() {
+      // Najskôr získame aktuálny počet kódov
       fetch('/list')
         .then(res => res.json())
         .then(codes => {
           const currentCodeCount = codes.length;
           if (currentCodeCount > previousCodeCount) {
-            previousCodeCount = currentCodeCount;
-            updateCodesList();
+            // Počet kódov sa zvýšil, znamená to, že sa niečo uložilo
+            previousCodeCount = currentCodeCount; // Aktualizujeme počítadlo
+            updateCodesList(); // Aktualizujeme UI
+            // Získame posledný kód (predpokladáme, že je nový)
             const lastCode = codes[codes.length - 1];
             const signalData = {
               code: lastCode.code,
@@ -929,6 +993,7 @@ const char index_html[] PROGMEM = R"rawliteral(
             };
             showPopup('RF Prijímanie', true, signalData);
           } else {
+            // Po 3 sekundách sa nič neuložilo, zobrazíme chybu
             showPopup('RF Prijímanie', false, { 
               message: 'Signál nebol zachytený. Skúste to znova.' 
             });
@@ -944,6 +1009,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     function toggleRollingCodes() {
       const btn = document.getElementById('rollBtn');
       if (isRolling) {
+        // Zastaviť
         isRolling = false;
         fetch('/rollStop', {
           method: 'POST',
@@ -952,15 +1018,18 @@ const char index_html[] PROGMEM = R"rawliteral(
         })
         .then(() => {
           showMessage('Zastavujem Rolling Codes...');
+          // Tlačidlo sa resetuje až po prijatí správy "roll_stopped" cez WebSocket
         })
         .catch(err => {
           console.error('Chyba pri zastavovaní:', err);
           resetRollingButton();
         });
       } else {
+        // Spustiť
         const fromCode = parseInt(document.getElementById('rollFrom').value);
         const toCode = parseInt(document.getElementById('rollTo').value);
         const delayMs = parseInt(document.getElementById('rollDelay').value);
+        // Validácia
         if (isNaN(fromCode) || isNaN(toCode) || isNaN(delayMs)) {
           showPopup('Chyba', false, { message: 'Všetky polia musia byť vyplnené číslami!' });
           return;
@@ -977,16 +1046,20 @@ const char index_html[] PROGMEM = R"rawliteral(
           showPopup('Chyba', false, { message: 'Delay musí byť medzi 50ms a 2000ms!' });
           return;
         }
+        // Vymazanie logu a inicializácia progress baru
         clearSendLog();
         const totalCount = toCode - fromCode + 1;
         updateProgress(totalCount, 0);
+        // Zmena tlačidla
         isRolling = true;
         btn.textContent = '⏹️ STOP';
         btn.style.background = '#e74c3c';
         btn.style.color = 'white';
+        // Popup o spustení
         showPopup('Rolling Codes', true, { 
           message: `Spúšťam od ${fromCode} po ${toCode} s oneskorením ${delayMs}ms` 
         });
+        // Odoslanie požiadavky na server
         fetch('/roll', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1007,6 +1080,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       btn.style.background = '#3498db';
       btn.style.color = 'white';
     }
+    // === Live Log Functions ===
     let sendLogEntries = [];
     let totalCodesToProcess = 0;
     let processedCodesCount = 0;
@@ -1014,12 +1088,13 @@ const char index_html[] PROGMEM = R"rawliteral(
       totalCodesToProcess = total;
       processedCodesCount = current;
       const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+      // Update progress circle
       const circle = document.getElementById('progressCircle');
       const text = document.getElementById('progressText');
       const status = document.getElementById('progressStatus');
       const subtext = document.getElementById('progressSubtext');
       if (circle && text) {
-        const circumference = 2 * Math.PI * 45;
+        const circumference = 2 * Math.PI * 45; // 2πr
         const offset = circumference - (percentage / 100) * circumference;
         circle.style.strokeDasharray = circumference;
         circle.style.strokeDashoffset = offset;
@@ -1056,7 +1131,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       div.style.color = status === 'chyba' ? '#e74c3c' : '#2c3e50';
       div.innerHTML = `[${timestamp}] <code style="background: #e9ecef; padding: 2px 4px; border-radius: 3px;">${code}</code> - ${status === 'chyba' ? '❌ Chyba' : '✅ Úspešne'}`;
       logDiv.appendChild(div);
-      logDiv.scrollTop = logDiv.scrollHeight;
+      logDiv.scrollTop = logDiv.scrollHeight; // Auto-scroll to bottom
     }
     function clearSendLog() {
       const logDiv = document.getElementById('sendLog');
@@ -1070,6 +1145,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     function initializeSendLog() {
       updateProgress(0, 0);
     }
+    // === Zvyšok funkcii ===
     function updateCodesList() {
       const list = document.getElementById('codesList');
       list.innerHTML = '<p>Načítavam...</p>';
@@ -1081,7 +1157,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         .then(codes => {
           list.innerHTML = '';
           updateMemoryUsage(codes.length);
-          previousCodeCount = codes.length;
+          previousCodeCount = codes.length; // <-- DÔLEŽITÉ: Aktualizujeme globálne počítadlo
           if (codes.length === 0) {
             list.innerHTML = '<p>Žiadne uložené kódy.</p>';
             return;
@@ -1148,6 +1224,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       if (loopInterval) clearInterval(loopInterval);
       loopInterval = null;
       showMessage('Loop zastavený');
+      // Show popup for stopping loop
       const stopData = {
         message: 'Loop odosielania bol zastavený!',
         status: 'Odosielanie zastavené'
@@ -1160,6 +1237,7 @@ const char index_html[] PROGMEM = R"rawliteral(
           .then(() => {
             showMessage('Kód vymazaný');
             updateCodesList();
+            // Show popup for deletion
             const deleteData = {
               code: code,
               message: 'Kód bol úspešne vymazaný!',
@@ -1175,6 +1253,7 @@ const char index_html[] PROGMEM = R"rawliteral(
           .then(() => {
             showMessage('Všetko vymazané');
             updateCodesList();
+            // Show popup for clearing all codes
             const clearData = {
               message: 'Všetky kódy boli úspešne vymazané!',
               status: 'Pamäť vyčistená'
@@ -1183,9 +1262,11 @@ const char index_html[] PROGMEM = R"rawliteral(
           });
       }
     }
+    // Spusti
     initSpectrum();
     updateCodesList();
-    initializeSendLog();
+    initializeSendLog(); // <-- Pridané: Inicializácia logu
+    // Add event listener for popup close button
     document.getElementById('popupOverlay').addEventListener('click', function(e) {
       if (e.target === this) {
         closePopup();
@@ -1305,30 +1386,23 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
 void printSignalDetails(uint8_t* buffer, uint8_t len, int rssi) {
   Serial.println("\n--- 📡 Zachytený RF Signál ---");
   
-  // Odhad počtu bitov
   int estimatedBits = len * 8;
   Serial.printf("📊 Odhadovaný počet bitov: %d\n", estimatedBits);
   
-  // Frekvencia
   Serial.printf("📡 Frekvencia: 433.92 MHz\n");
   
-  // Sila signálu (RSSI)
   Serial.printf("📶 RSSI: %d dBm\n", rssi);
   
-  // Modulácia
-  Serial.printf("🎛️  Modulácia: OOK (On-Off Keying)\n");
+  Serial.printf("🎛️  Modulácia: ASK/OOK\n");
   
-  // Dátový tok
   Serial.printf("⏱️  Dátový tok: 2400 Bd\n");
   
-  // Výpis RAW dát
   Serial.print("📦 RAW dáta (HEX): ");
   for (int i = 0; i < len; i++) {
     Serial.printf("%02X ", buffer[i]);
   }
   Serial.println();
   
-  // Pokus o interpretáciu ako 24-bitový kód
   if (len >= 3) {
     long interpretedCode = ((long)buffer[0] << 16) | ((long)buffer[1] << 8) | (long)buffer[2];
     Serial.printf("🔢 Interpretovaný 24-bitový kód: %ld (0x%06lX)\n", interpretedCode, interpretedCode);
@@ -1354,25 +1428,45 @@ void setup() {
 
   // === CC1101 Inicializácia ===
   Serial.println("Inicializácia CC1101...");
-  cc1101.begin(CC1101_CS_PIN, CC1101_GDO0_PIN, CC1101_GDO2_PIN);
 
-  // Nastavenie frekvencie
-  cc1101.setFrequency(433.92f);
+  // Inicializácia CC1101
+  ELECHOUSE_cc1101.Init();
 
-  // Nastavenie modulácie na OOK
-  cc1101.setModulation(cc1101::Modulation::OOK);
+  // Overenie komunikácie — POUŽÍVAME SpiReadReg, nie ReadReg
+  uint8_t version = ELECHOUSE_cc1101.SpiReadReg(CC1101_VERSION);
+  Serial.printf("CC1101 Verzia: 0x%02X\n", version);
+  if (version == 0x00 || version == 0xFF) {
+    Serial.println("❌ CHYBA: CC1101 sa nepodarilo inicializovať!");
+    while(1); // Zastaví sa tu
+  }
 
-  // Nastavenie dátového toku
-  cc1101.setBaudRate(2400);
+  // === NASTAVENIE PRE 433MHz ASK/OOK (typické pre RC zariadenia) ===
+  // Frekvencia 433.92 MHz
+  ELECHOUSE_cc1101.setMHZ(433.92);
 
-  // Nastavenie výstupného výkonu
-  cc1101.setOutputPower(10);
+  // Modulácia: ASK/OOK (1 = ASK/OOK, 0 = 2FSK)
+  ELECHOUSE_cc1101.setModulation(1);
+
+  // Dátový tok: 2400 Bd
+  ELECHOUSE_cc1101.setDRate(2.4);
+
+  // Deviácia: 47.6 kHz (pre ASK/OOK nie je kritické, ale nastavíme)
+  ELECHOUSE_cc1101.setDeviation(47.6);
+
+  // Výstupný výkon: 10 dBm (0x0F = max, 0x00 = min)
+  ELECHOUSE_cc1101.setPA(0x0F);
+
+  // Filter: 250 kHz (pre ASK/OOK)
+  ELECHOUSE_cc1101.setChsp(250.0);
+
+  // Kalibrácia frekvencie
+  ELECHOUSE_cc1101.SpiWriteReg(CC1101_FSCTRL0, 0x00); // Frekvencia offset 0
+  ELECHOUSE_cc1101.SpiWriteReg(CC1101_FSCTRL1, 0x08); // Frekvencia IF = 325 kHz
 
   // Zapnutie prijímača
-  cc1101.setRxState(true);
-  cc1101.setTxState(false);
+  ELECHOUSE_cc1101.SetRx();
 
-  Serial.println("✅ CC1101: Inicializovaný na 433.92 MHz, OOK, 2400 Bd");
+  Serial.println("✅ CC1101: Nastavený na 433.92 MHz, ASK/OOK, 2400 Bd");
 
   // EEPROM
   loadCodesFromEEPROM();
@@ -1436,7 +1530,6 @@ void setup() {
     request->send(200, "text/plain", "Prijímanie (3s)...");
   });
 
-  // === HANDLER PRE ROLLING CODES ===
   server.on("/roll", HTTP_POST, [](AsyncWebServerRequest *request){
       if (!request->hasParam("from", true) || 
           !request->hasParam("to", true) || 
@@ -1465,8 +1558,11 @@ void setup() {
               long toCode = p->toCode;
               int delayMs = p->delayMs;
               delete p;
-              disableCore0WDT();
-              disableCore1WDT();
+
+              // --- NEVYPÍNAJTE WATCHDOG! ---
+              // disableCore0WDT();
+              // disableCore1WDT();
+
               unsigned long startTime = millis();
               int count = 0;
               int totalCount = toCode - fromCode + 1;
@@ -1485,21 +1581,23 @@ void setup() {
                   data[0] = (code >> 16) & 0xFF;
                   data[1] = (code >> 8) & 0xFF;
                   data[2] = code & 0xFF;
-                  cc1101.setTxState(true);
-                  cc1101.setRxState(false);
-                  cc1101.writeData(data, 3);
-                  cc1101.setRxState(true);
-                  cc1101.setTxState(false);
+                  
+                  ELECHOUSE_cc1101.SetTx();
+                  ELECHOUSE_cc1101.SendData(data, 3);
+                  ELECHOUSE_cc1101.SetRx();
                   // --- Koniec odosielania ---
                   
                   count++;
                   String progressMsg = "{\"type\":\"roll_progress\",\"current\":" + String(count) + ",\"total\":" + String(totalCount) + ",\"code\":" + String(code) + "}";
                   ws.textAll(progressMsg);
+                  
+                  // --- PRIDANÉ: yield() pred a po oneskorení ---
                   yield();
+                  
                   if (delayMs > 0 && code < toCode) {
                       unsigned long startDelay = millis();
                       while (millis() - startDelay < delayMs) {
-                          yield();
+                          yield(); // DÔLEŽITÉ: volajte yield() často!
                           delay(1);
                           if (rollingShouldStop) break;
                       }
@@ -1509,11 +1607,18 @@ void setup() {
                           break;
                       }
                   }
+                  
+                  // --- PRIDANÉ: yield() na konci cyklu ---
+                  yield();
               }
+              
               unsigned long duration = millis() - startTime;
               float seconds = duration / 1000.0;
-              enableCore0WDT();
-              enableCore1WDT();
+              
+              // --- NEZAPÍNAJTE WATCHDOG! ---
+              // enableCore0WDT();
+              // enableCore1WDT();
+              
               if (!rollingShouldStop) {
                   String resultMsg = "{\"type\":\"roll_complete\",\"success\":true,\"count\":" + String(count) + ",\"duration\":" + String(seconds, 2) + "}";
                   ws.textAll(resultMsg);
@@ -1544,11 +1649,10 @@ void setup() {
         data[0] = (code >> 16) & 0xFF;
         data[1] = (code >> 8) & 0xFF;
         data[2] = code & 0xFF;
-        cc1101.setTxState(true);
-        cc1101.setRxState(false);
-        cc1101.writeData(data, 3);
-        cc1101.setRxState(true);
-        cc1101.setTxState(false);
+        
+        ELECHOUSE_cc1101.SetTx();  // Veľké "S"!
+        ELECHOUSE_cc1101.SendData(data, 3);
+        ELECHOUSE_cc1101.SetRx();  // Veľké "S"!
         // --- Koniec odosielania ---
         request->send(200, "text/plain", "Odoslané");
       } else {
@@ -1569,11 +1673,10 @@ void setup() {
           data[0] = (code >> 16) & 0xFF;
           data[1] = (code >> 8) & 0xFF;
           data[2] = code & 0xFF;
-          cc1101.setTxState(true);
-          cc1101.setRxState(false);
-          cc1101.writeData(data, 3);
-          cc1101.setRxState(true);
-          cc1101.setTxState(false);
+          
+          ELECHOUSE_cc1101.SetTx();  // Veľké "S"!
+          ELECHOUSE_cc1101.SendData(data, 3);
+          ELECHOUSE_cc1101.SetRx();  // Veľké "S"!
           // --- Koniec odosielania ---
           delay(1000);
         }
@@ -1635,28 +1738,72 @@ void setup() {
   ws.onEvent(onWsEvent);
   server.addHandler(&ws);
   server.begin();
+
+  // Testovacie vysielanie známeho kódu každých 5 sekúnd
+  xTaskCreatePinnedToCore([](void *param) {
+    long testCode = 1234567; // Zmeňte na kód, ktorý funguje s vaším zariadením
+    while(1) {
+      uint8_t data[3];
+      data[0] = (testCode >> 16) & 0xFF;
+      data[1] = (testCode >> 8) & 0xFF;
+      data[2] = testCode & 0xFF;
+      
+      Serial.printf("📡 Testovacie vysielanie kódu: %ld\n", testCode);
+      
+      ELECHOUSE_cc1101.SetTx();
+      for(int i=0; i<10; i++) {
+        ELECHOUSE_cc1101.SendData(data, 3);
+        delayMicroseconds(500);
+      }
+      ELECHOUSE_cc1101.SetRx();
+      
+      vTaskDelay(5000 / portTICK_PERIOD_MS);
+    }
+  }, "TestTx", 2048, NULL, 1, NULL, 1);
+
   Serial.println("Server: http://192.168.4.1");
 }
 
 // === Loop ===
 void loop() {
   if (isReceiving && (millis() - receiveStartTime) < 3000) {
-    if (cc1101.receiveData()) {
+    if (ELECHOUSE_cc1101.CheckRxFifo(1)) {
       uint8_t buffer[32];
-      uint8_t len = sizeof(buffer);
-      int rssi = cc1101.getRssi();
+      uint8_t len = ELECHOUSE_cc1101.ReceiveData(buffer);
       
-      if (cc1101.readData(buffer, &len)) {
-        // Vypíšeme detaily signálu do Serial monitora
-        printSignalDetails(buffer, len, rssi);
+      if (len > 0) {
+        int rssi = ELECHOUSE_cc1101.getRssi();
         
-        // Pokus o extrakciu 24-bitového kódu
-        if (len >= 3) {
-          lastValidCode = ((long)buffer[0] << 16) | ((long)buffer[1] << 8) | (long)buffer[2];
-          signalReceived = true;
-          Serial.printf("✅ Zachytený kód: %ld\n", lastValidCode);
+        // --- FILTRÁCIA: Ignorujeme kódy s nízkym RSSI alebo opakujúcimi sa bajtami ---
+        bool isNoise = false;
+        if (rssi < -80) { // Príliš slabý signál
+          isNoise = true;
+        } else if (len >= 3) {
+          // Skontrolujeme, či nie je to opakujúci sa vzor (0x0F0F0F, 0x000000, 0xFFFFFFFF)
+          if ((buffer[0] == buffer[1] && buffer[1] == buffer[2]) ||
+              (buffer[0] == 0x00 && buffer[1] == 0x00 && buffer[2] == 0x00) ||
+              (buffer[0] == 0xFF && buffer[1] == 0xFF && buffer[2] == 0xFF)) {
+            isNoise = true;
+          }
+        }
+        
+        if (!isNoise) {
+          printSignalDetails(buffer, len, rssi);
+          
+          if (len >= 3) {
+            long interpretedCode = ((long)buffer[0] << 16) | ((long)buffer[1] << 8) | (long)buffer[2];
+            if (interpretedCode > 0 && interpretedCode <= 16777215) {
+              lastValidCode = interpretedCode;
+              signalReceived = true;
+              Serial.printf("✅ Zachytený kód: %ld\n", lastValidCode);
+            } else {
+              Serial.println("⚠️  Zachytený kód mimo rozsah.");
+            }
+          } else {
+            Serial.println("⚠️  Zachytený paket je príliš krátky na 24-bitový kód.");
+          }
         } else {
-          Serial.println("⚠️  Zachytený paket je príliš krátky na 24-bitový kód.");
+          Serial.println("🔇 Ignorovaný šum alebo neplatný signál.");
         }
       }
     }
