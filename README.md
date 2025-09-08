@@ -29,7 +29,7 @@
 | Receiver pins | esp32 pins  |
 | ------------- | ----------- |
 | VCC           | 3.3V        |
-| Pin           | D4          |
+| Pin           | D2          |
 | GND           | GND         |
 
 ---
