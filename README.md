@@ -17,6 +17,35 @@
 - Savind & next time replaying signals
 - ```universal Remote Control```
 
+## Connection
+### Rcswitch
+
+| Transmitter pins | esp32 pins  |
+| ---------------  | ----------- |
+| VCC              | 3.3V        |
+| Pin              | D4          |
+| GND              | GND         |
+
+| Receiver pins | esp32 pins  |
+| ------------- | ----------- |
+| VCC           | 3.3V        |
+| Pin           | D4          |
+| GND           | GND         |
+
+---
+
+### cc1101
+| cc1101 pins | esp32 pins  |
+| ----------- | ----------- |
+| VCC         | 3.3V        |
+| GND         | GND         |
+| SCK         | GPIO 18     |
+| MISO        | GPIO 19     |
+| MOSI        | GPIO  23    |
+| CS          | GPIO 5      |
+| GDO0        | GPIO 2      |
+| GDO2        | GPIO 4      |
+
 ## <p align="center">How to control me ?</p>
 
 - Easy by using WEB Interface
