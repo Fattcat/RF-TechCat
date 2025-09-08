@@ -10,7 +10,7 @@
 </p>
 
 ## <p align="center">RF-TechCat - clones your 433MHz keys</p>
-
+## <p align="center"> Please support my job with GitHub Star this repository</p>
 ## <p align="center">For what Am I made & used for ?</p>
 
 - Copying & replaying 433 MHz Signal captured from somewhere :D
