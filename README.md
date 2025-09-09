@@ -18,9 +18,10 @@
 - ```universal Remote Control```
 
 # What to buy ?
-  - esp32 4€
+  - esp32 - 4€
   - Breadboard - 3€
   - Arduino rcswitch compatible 433MHz receiver & transmitter both about 2€
+  - Jumper wires Male-Male 1€
 
 ## Connection
 ### Rcswitch
