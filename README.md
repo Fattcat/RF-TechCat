@@ -53,16 +53,16 @@
 
   - code DOES NOT WORKS as expected
 
-| cc1101 pins | esp32 pins  |
-| ----------- | ----------- |
-| VCC         | 3.3V        |
-| GND         | GND         |
-| SCK         | GPIO 18     |
-| MISO        | GPIO 19     |
-| MOSI        | GPIO  23    |
-| CS          | GPIO 5      |
-| GDO0        | GPIO 2      |
-| GDO2        | GPIO 4      |
+| cc1101 pins | esp32 pins |
+| ----------- | ---------- |
+| VCC         | 3.3V       |
+| GND         | GND        |
+| SCK         | GPIO 18    |
+| MISO        | GPIO 19    |
+| MOSI        | GPIO  23   |
+| CS          | GPIO 5     |
+| GDO0        | GPIO 21    |
+| GDO2        | GPIO 22    |
 
 ## <p align="center">How to control me ?</p>
 
