@@ -47,6 +47,13 @@
 | Transmit  Strenght  | ✅    |  98 - 100  | Depends on antenna |
 | Save signal         | ✅    |  100       | depends on EEPROM |
 
+
+## Note 📝
+### Antenna
+- Recomnended length of antenna for:
+  - 433mhz Transmitter: ~17.3 cm it is 1/4 λ
+  - 433mhz Transmitter: ~17.3 cm, for sensitive signals use 20 cm or longer
+
 ---
 
 ### cc1101
