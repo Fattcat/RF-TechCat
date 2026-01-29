@@ -4,6 +4,8 @@
 #include <RCSwitch.h>
 #include <EEPROM.h>
 
+// Version RF Cat v2.1.3
+
 // === WiFi nastavenia ===
 const char* ssid = "ESP32_Control";
 const char* password = "12345678";
@@ -105,7 +107,7 @@ body.popup-active .container {filter: blur(3px);}
 <body>
 <div class="container">
 <header>
-<h1>|RF Control Panel</h1>
+<h1>RF Cat v2.1.3</h1>
 </header>
 <div class="content">
 <div class="section">
