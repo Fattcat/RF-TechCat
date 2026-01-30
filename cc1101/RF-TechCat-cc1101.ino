@@ -1,257 +1,364 @@
 #include <WiFi.h>
-#include <WebServer.h>
-#include <SPI.h>
-#include <cc1101.h>  // https://github.com/SpaceTeddy/CC1101
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <EEPROM.h>
+#include <CC1101.h>  // https://github.com/SpaceTeddy/CC1101
 
-// ===== NASTAVENIA =====
-const char* ssid = "MojWiFi";
-const char* password = "heslo123";
-const uint16_t webPort = 80;
+// === WiFi nastavenia ===
+const char* ssid = "ESP32_CC1101";
+const char* password = "12345678";
 
-CC1101 radio;
-WebServer server(webPort);
+// === CC1101 piny ===
+#define CC1101_CS   5
+#define CC1101_GDO0 4
 
-bool radioInitialized = false;
-uint8_t rxBuffer[128];
-uint8_t txBuffer[128];
-size_t lastRxSize = 0;
-String lastRxHex = "";
-unsigned long lastRxTime = 0;
+// === Štruktúra pre dlhé kódy (až 128 bitov = 16 bajtov) ===
+struct LongCodeItem {
+  uint8_t code[16];    // 128 bitov = 16 bajtov
+  uint8_t length;      // Dĺžka v BITOCH (nie bajtoch!)
+  uint8_t protocol;    // 0=RCSwitch-like, 1=Raw packet
+  char name[33];
+};
 
-// ===== WEB ROZHRANIE =====
-const char INDEX_HTML[] PROGMEM = R"rawliteral(
+#define MAX_CODES 20
+#define CODE_ITEM_SIZE sizeof(LongCodeItem)
+#define EEPROM_SIZE (MAX_CODES * CODE_ITEM_SIZE)
+
+LongCodeItem savedCodes[MAX_CODES];
+int codeCount = 0;
+
+CC1101 radio(CC1101_CS, CC1101_GDO0);
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+
+bool isReceiving = false;
+unsigned long receiveStartTime = 0;
+uint8_t lastCode[16] = {0};
+uint8_t lastCodeLength = 0;
+String pendingName = "Unknown";
+
+// Forward deklarácie
+void loadCodesFromEEPROM();
+void saveCodeToEEPROM(uint8_t* code, uint8_t length, uint8_t protocol, const char* name);
+void transmitLongCode(uint8_t* code, uint8_t length, uint8_t protocol);
+
+const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>CC1101 RF Controller</title>
-  <style>
-    body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; background: #f5f5f5; }
-    .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
-    h1 { color: #2c3e50; text-align: center; }
-    button { padding: 12px 24px; font-size: 16px; margin: 10px 5px; border: none; border-radius: 5px; cursor: pointer; }
-    .btn-receive { background: #3498db; color: white; }
-    .btn-send { background: #2ecc71; color: white; }
-    .btn-clear { background: #e74c3c; color: white; }
-    textarea { width: 100%; height: 100px; padding: 10px; font-family: monospace; margin-top: 10px; }
-    .status { padding: 15px; border-radius: 5px; margin: 15px 0; text-align: center; font-weight: bold; }
-    .status-ok { background: #d4edda; color: #155724; }
-    .status-error { background: #f8d7da; color: #721c24; }
-    .status-rx { background: #d1ecf1; color: #0c5460; }
-    .controls { display: flex; flex-wrap: wrap; gap: 10px; }
-    .packet-size { margin: 15px 0; }
-    input[type="text"] { width: 100%; padding: 10px; font-family: monospace; margin-top: 5px; }
-  </style>
+<meta charset="UTF-8">
+<title>ESP32 CC1101 Control</title>
+<style>
+body {font-family: Arial; padding: 20px; background: #f0f2f5;}
+.container {max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);}
+.section {margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 8px;}
+h2 {color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 8px;}
+input, button {padding: 10px; margin: 5px 0; font-size: 16px;}
+button {background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer;}
+button:hover {background: #45a049;}
+button.danger {background: #f44336;}
+button.danger:hover {background: #d32f2f;}
+.code-list {max-height: 300px; overflow-y: auto; margin-top: 15px;}
+.code-item {padding: 10px; border: 1px solid #eee; margin: 5px 0; border-radius: 5px; display: flex; justify-content: space-between;}
+.hex-display {font-family: monospace; background: #f8f8f8; padding: 3px 6px; border-radius: 3px; color: #c0392b;}
+</style>
 </head>
 <body>
-  <h1>📡 CC1101 RF Controller</h1>
+<div class="container">
+  <h1>📡 ESP32 CC1101 RF Control</h1>
   
-  <div class="card">
-    <div id="status" class="status status-ok">Radio ready @ 433.92 MHz</div>
+  <div class="section">
+    <h2>📥 Prijímanie dlhých kódov</h2>
+    <input type="text" id="nameInput" placeholder="Názov kódu (napr. Garáž)">
+    <button onclick="startReceive()">Start Prijímanie (5s)</button>
+    <div id="status">Stav: Čaká sa...</div>
   </div>
-
-  <div class="card">
-    <h2>📥 PRIJAŤ SIGNÁL</h2>
-    <button class="btn-receive" onclick="receiveSignal()">▶️ Štart prijímania (5s)</button>
-    <div class="packet-size">Posledný prijatý paket: <span id="rx-size">žiadny</span></div>
-    <textarea id="rx-data" readonly placeholder="Tu sa zobrazí prijatý hexadecimálny signál..."></textarea>
+  
+  <div class="section">
+    <h2>📤 Odoslanie kódu</h2>
+    <input type="text" id="hexInput" placeholder="Hex kód (napr. 0123456789ABCDEF)">
+    <input type="number" id="bitLength" placeholder="Dĺžka v bitoch (napr. 64)" min="1" max="128">
+    <button onclick="sendHexCode()">Odoslať Hex kód</button>
   </div>
-
-  <div class="card">
-    <h2>📤 ODOSLAŤ SIGNÁL</h2>
-    <div class="packet-size">
-      <label><input type="radio" name="pkt-size" value="64" checked> 64-bit (8 B)</label>
-      <label><input type="radio" name="pkt-size" value="128"> 128-bit (16 B)</label>
-    </div>
-    <input type="text" id="tx-data" placeholder="Zadaj hex (napr. A1B2C3D4E5F67890)" value="A1B2C3D4E5F67890">
-    <div class="controls">
-      <button class="btn-send" onclick="sendSignal()">📤 Odoslať</button>
-      <button class="btn-clear" onclick="document.getElementById('tx-data').value=''">🗑️ Vyčistiť</button>
-    </div>
+  
+  <div class="section">
+    <h2>💾 Uložené kódy (až 128 bitov)</h2>
+    <div id="codesList" class="code-list">Načítavam...</div>
   </div>
+</div>
 
-  <script>
-    function updateStatus(msg, cls) {
-      const el = document.getElementById('status');
-      el.className = 'status ' + cls;
-      el.textContent = msg;
-    }
+<script>
+let ws = new WebSocket('ws://' + location.host + '/ws');
 
-    function receiveSignal() {
-      updateStatus('Čakám na signál...', 'status-rx');
-      document.getElementById('rx-data').value = 'Pripravujem sa na prijatie...\n';
-      
-      fetch('/receive?duration=5000')
-        .then(r => r.json())
-        .then(d => {
-          if (d.success && d.data) {
-            document.getElementById('rx-data').value = d.data;
-            document.getElementById('rx-size').textContent = d.size + ' B (' + (d.size*8) + '-bit)';
-            updateStatus('✅ Prijatý ' + (d.size*8) + '-bitový signál', 'status-ok');
-          } else {
-            document.getElementById('rx-data').value = '❌ Žiadny signál neprijatý alebo chyba';
-            updateStatus('⚠️ Čas vypršal - žiadny signál', 'status-error');
-          }
-        })
-        .catch(e => {
-          updateStatus('❌ Chyba komunikácie', 'status-error');
-          console.error(e);
-        });
-    }
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.type === 'signal_received') {
+    document.getElementById('status').textContent = '✅ Zachytený kód: ' + data.hex;
+    alert('Zachytený kód: ' + data.hex + '\nDĺžka: ' + data.length + ' bitov');
+    loadCodes();
+  } else if (data.type === 'receiving') {
+    document.getElementById('status').textContent = '📡 Prijímanie... ' + data.time + 's';
+  }
+};
 
-    function sendSignal() {
-      const size = document.querySelector('input[name="pkt-size"]:checked').value;
-      const data = document.getElementById('tx-data').value.trim();
-      
-      if (!data) {
-        updateStatus('⚠️ Zadaj hexadecimálny signál', 'status-error');
-        return;
-      }
-      
-      updateStatus('Odosielam...', 'status-rx');
-      fetch(`/send?size=${size}&data=${encodeURIComponent(data)}`)
-        .then(r => r.json())
-        .then(d => {
-          if (d.success) {
-            updateStatus(`✅ Odoslaný ${size}-bitový signál`, 'status-ok');
-          } else {
-            updateStatus(`❌ Chyba: ${d.error}`, 'status-error');
-          }
-        })
-        .catch(e => {
-          updateStatus('❌ Chyba odosielania', 'status-error');
-          console.error(e);
-        });
-    }
-  </script>
+function startReceive() {
+  const name = document.getElementById('nameInput').value || 'Nezmenovaný';
+  fetch('/receive?name=' + encodeURIComponent(name));
+  document.getElementById('status').textContent = '📡 Prijímanie začaté...';
+}
+
+function sendHexCode() {
+  const hex = document.getElementById('hexInput').value.trim();
+  const bits = document.getElementById('bitLength').value;
+  fetch('/transmit', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'hex=' + hex + '&bits=' + bits
+  }).then(() => alert('Odoslané!'));
+}
+
+function loadCodes() {
+  fetch('/list').then(r => r.json()).then(codes => {
+    const list = document.getElementById('codesList');
+    list.innerHTML = codes.map(c => 
+      `<div class="code-item">
+        <div>
+          <strong>${c.name}</strong><br>
+          <span class="hex-display">${c.hex}</span><br>
+          <small>${c.length} bitov</small>
+        </div>
+        <div>
+          <button onclick="useCode('${c.hex}', ${c.length})">📤</button>
+          <button class="danger" onclick="deleteCode(${c.index})">🗑️</button>
+        </div>
+      </div>`
+    ).join('');
+  });
+}
+
+function useCode(hex, bits) {
+  document.getElementById('hexInput').value = hex;
+  document.getElementById('bitLength').value = bits;
+}
+
+function deleteCode(index) {
+  if (confirm('Vymazať?')) fetch('/delete?index=' + index).then(loadCodes);
+}
+
+window.onload = loadCodes;
+</script>
 </body>
 </html>
 )rawliteral";
 
-// ===== INICIALIZÁCIA =====
+void loadCodesFromEEPROM() {
+  EEPROM.begin(EEPROM_SIZE);
+  codeCount = 0;
+  for (int i = 0; i < MAX_CODES; i++) {
+    LongCodeItem item;
+    EEPROM.get(i * CODE_ITEM_SIZE, item);
+    if (item.length == 0 || item.length > 128) break; // Prázdny alebo neplatný záznam
+    savedCodes[codeCount++] = item;
+  }
+}
+
+void saveCodeToEEPROM(uint8_t* code, uint8_t length, uint8_t protocol, const char* name) {
+  if (codeCount >= MAX_CODES) return;
+  
+  LongCodeItem item;
+  memcpy(item.code, code, 16);
+  item.length = length;
+  item.protocol = protocol;
+  strncpy(item.name, name, 31);
+  item.name[31] = '\0';
+  
+  EEPROM.put(codeCount * CODE_ITEM_SIZE, item);
+  EEPROM.commit();
+  savedCodes[codeCount++] = item;
+  
+  Serial.printf("✅ Uložený dlhý kód (%d bitov): ", length);
+  for (int i = 0; i < (length + 7) / 8; i++) Serial.printf("%02X", code[i]);
+  Serial.printf(" (%s)\n", name);
+}
+
+// ✅ Kľúčová funkcia: Odoslanie ľubovoľne dlhého kódu (1-128 bitov)
+void transmitLongCode(uint8_t* code, uint8_t length, uint8_t protocol) {
+  if (length == 0 || length > 128) return;
+  
+  // Konverzia bitov na bajty
+  uint8_t byteLen = (length + 7) / 8;
+  uint8_t packet[byteLen];
+  memcpy(packet, code, byteLen);
+  
+  if (protocol == 0) {
+    // Jednoduchý režim: priama transmisia (ako RCSwitch)
+    radio.setModeIdle();
+    radio.transmit(packet, byteLen);
+    radio.setModeRX();
+  } else {
+    // Pokročilý režim: vlastný paket s preamble/sync
+    uint8_t fullPacket[byteLen + 4];
+    fullPacket[0] = 0xAA; // Preamble
+    fullPacket[1] = 0xAA;
+    fullPacket[2] = 0x2D; // Sync word
+    fullPacket[3] = 0xD4;
+    memcpy(fullPacket + 4, packet, byteLen);
+    
+    radio.setModeIdle();
+    radio.transmit(fullPacket, byteLen + 4);
+    radio.setModeRX();
+  }
+  
+  Serial.printf("📤 Odoslaný kód (%d bitov): ", length);
+  for (int i = 0; i < byteLen; i++) Serial.printf("%02X", packet[i]);
+  Serial.println();
+}
+
 void setup() {
   Serial.begin(115200);
-  SPI.begin();
-  delay(100);
-
-  // Pripojenie k WiFi
-  WiFi.begin(ssid, password);
-  Serial.print("Pripájam sa k WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi pripojené! IP: " + WiFi.localIP().toString());
-
+  
   // Inicializácia CC1101
-  if (radio.begin()) {
-    radio.setFrequency(433.92);  // MHz - uprav podľa tvojho modulu
-    radio.setPacketLength(128);  // max dĺžka
-    radio.setPower(10);          // výkon v dBm
-    radioInitialized = true;
-    Serial.println("CC1101 inicializovaný");
-  } else {
+  if (!radio.begin()) {
     Serial.println("❌ CC1101 inicializácia zlyhala!");
+    while (1) delay(1000);
   }
-
-  // Web server routy
-  server.on("/", []() {
-    server.send_P(200, "text/html", INDEX_HTML);
+  
+  // Nastavenie frekvencie na 433.92 MHz
+  radio.setFrequency(433.92);
+  radio.setModulation(CCWOR); // OOK/ASK modulácia (kompatibilné s RCSwitch)
+  radio.setDeviation(47.6);   // Deviácia pre OOK
+  radio.setChannelBW(325.42); // Šírka pásma
+  radio.setPower(10);         // Výkon v dBm
+  radio.setModeRX();          // Spustiť prijímanie
+  
+  Serial.println("✅ CC1101 inicializovaný na 433.92 MHz");
+  
+  // WiFi AP
+  WiFi.softAP(ssid, password);
+  Serial.print("IP: ");
+  Serial.println(WiFi.softAPIP());
+  
+  // EEPROM
+  loadCodesFromEEPROM();
+  Serial.printf("Načítané kódy: %d\n", codeCount);
+  
+  // Web server
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", index_html);
   });
-
-  server.on("/receive", []() {
-    if (!radioInitialized) {
-      server.send(500, "application/json", "{\"success\":false,\"error\":\"Radio not ready\"}");
-      return;
+  
+  server.on("/list", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = "[";
+    for (int i = 0; i < codeCount; i++) {
+      json += "{\"index\":" + String(i) + ",\"name\":\"" + savedCodes[i].name + "\",\"hex\":\"";
+      int byteLen = (savedCodes[i].length + 7) / 8;
+      for (int j = 0; j < byteLen; j++) json += String(savedCodes[i].code[j], HEX);
+      json += "\",\"length\":" + String(savedCodes[i].length) + "}";
+      if (i < codeCount - 1) json += ",";
     }
-
-    int duration = server.arg("duration").toInt();
-    if (duration <= 0) duration = 5000;
-
-    lastRxSize = 0;
-    memset(rxBuffer, 0, sizeof(rxBuffer));
-    
-    radio.receive();  // prepni do RX módu
-    unsigned long start = millis();
-    
-    while (millis() - start < (unsigned long)duration) {
-      if (radio.available()) {
-        lastRxSize = radio.read(rxBuffer, sizeof(rxBuffer));
-        lastRxTime = millis();
-        break;
-      }
-      delay(10);
-    }
-
-    radio.idle();  // ukonči RX
-
-    if (lastRxSize > 0) {
-      String hex = "";
-      for (size_t i = 0; i < lastRxSize; i++) {
-        char buf[3];
-        sprintf(buf, "%02X", rxBuffer[i]);
-        hex += buf;
-        if ((i + 1) % 4 == 0 && i < lastRxSize - 1) hex += " ";
-      }
-      lastRxHex = hex;
-      
-      String json = "{\"success\":true,\"size\":" + String(lastRxSize) + 
-                    ",\"data\":\"" + hex + "\"}";
-      server.send(200, "application/json", json);
+    json += "]";
+    request->send(200, "application/json", json);
+  });
+  
+  server.on("/receive", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (request->hasParam("name")) {
+      pendingName = request->getParam("name")->value();
     } else {
-      server.send(200, "application/json", "{\"success\":false,\"error\":\"timeout\"}");
+      pendingName = "Nezmenovaný";
     }
+    isReceiving = true;
+    receiveStartTime = millis();
+    memset(lastCode, 0, 16);
+    lastCodeLength = 0;
+    request->send(200, "text/plain", "Prijímanie 5s...");
   });
-
-  server.on("/send", []() {
-    if (!radioInitialized) {
-      server.send(500, "application/json", "{\"success\":false,\"error\":\"Radio not ready\"}");
-      return;
-    }
-
-    int size = server.arg("size").toInt();
-    String data = server.arg("data");
-    
-    if (size != 64 && size != 128) {
-      server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid size\"}");
-      return;
-    }
-
-    size_t byteLen = (size == 64) ? 8 : 16;
-    memset(txBuffer, 0, sizeof(txBuffer));
-
-    // Konverzia hex → bytes
-    bool valid = true;
-    data.replace(" ", "");
-    if (data.length() < byteLen * 2) valid = false;
-    
-    for (size_t i = 0; i < byteLen && valid; i++) {
-      if (i * 2 + 1 >= data.length()) {
-        valid = false;
-        break;
+  
+  server.on("/transmit", HTTP_POST, [](AsyncWebServerRequest *request){
+    if (request->hasParam("hex", true) && request->hasParam("bits", true)) {
+      String hex = request->getParam("hex", true)->value();
+      uint8_t bits = request->getParam("bits", true)->value().toInt();
+      
+      // Konverzia hex stringu na bajty
+      uint8_t code[16] = {0};
+      int byteLen = (bits + 7) / 8;
+      for (int i = 0; i < byteLen && i*2 < hex.length(); i++) {
+        String byteStr = hex.substring(i*2, min((i+1)*2, hex.length()));
+        code[i] = strtol(byteStr.c_str(), NULL, 16);
       }
-      String byteStr = data.substring(i * 2, i * 2 + 2);
-      txBuffer[i] = (uint8_t)strtol(byteStr.c_str(), NULL, 16);
+      
+      transmitLongCode(code, bits, 0);
+      request->send(200, "text/plain", "Odoslané");
+    } else {
+      request->send(400, "text/plain", "Chýbajú parametre");
     }
-
-    if (!valid) {
-      server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid hex\"}");
-      return;
-    }
-
-    // Odoslanie
-    radio.transmit();
-    radio.write(txBuffer, byteLen);
-    radio.idle();
-
-    server.send(200, "application/json", "{\"success\":true}");
   });
-
+  
+  server.on("/delete", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (request->hasParam("index")) {
+      int idx = request->getParam("index")->value().toInt();
+      if (idx >= 0 && idx < codeCount) {
+        // Posunutie záznamov
+        for (int i = idx; i < codeCount - 1; i++) savedCodes[i] = savedCodes[i+1];
+        codeCount--;
+        
+        // Prepísanie EEPROM
+        EEPROM.begin(EEPROM_SIZE);
+        for (int i = 0; i < MAX_CODES; i++) {
+          if (i < codeCount) EEPROM.put(i * CODE_ITEM_SIZE, savedCodes[i]);
+          else {
+            LongCodeItem empty = {0};
+            EEPROM.put(i * CODE_ITEM_SIZE, empty);
+          }
+        }
+        EEPROM.commit();
+      }
+    }
+    request->send(200, "text/plain", "OK");
+  });
+  
+  ws.onEvent([](AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len){
+    if (type == WS_EVT_CONNECT) Serial.printf("WebSocket pripojený\n");
+  });
+  server.addHandler(&ws);
   server.begin();
-  Serial.println("Web server beží na http://" + WiFi.localIP().toString());
+  Serial.println("Server beží na http://192.168.4.1");
 }
 
 void loop() {
-  server.handleClient();
-  delay(1);
+  // Prijímanie dlhých kódov
+  if (isReceiving && (millis() - receiveStartTime) < 5000) {
+    uint8_t packet[64];
+    uint8_t len = radio.receiveData(packet, sizeof(packet));
+    
+    if (len > 0) {
+      // Detekcia dĺžky kódu (jednoduchá heuristika)
+      lastCodeLength = len * 8; // Predpokladáme plný bajt
+      memcpy(lastCode, packet, min(len, 16));
+      
+      // Odoslanie WebSocket správy
+      String hex = "";
+      for (int i = 0; i < min(len, 16); i++) hex += String(packet[i], HEX);
+      
+      String msg = "{\"type\":\"signal_received\",\"hex\":\"" + hex + "\",\"length\":" + String(lastCodeLength) + "}";
+      ws.textAll(msg);
+      
+      Serial.printf("📡 Zachytený paket (%d bajtov): ", len);
+      for (int i = 0; i < len; i++) Serial.printf("%02X ", packet[i]);
+      Serial.println();
+    }
+    
+    // Aktualizácia stavu prijímania
+    if (millis() % 500 == 0) {
+      int elapsed = (millis() - receiveStartTime) / 1000;
+      String msg = "{\"type\":\"receiving\",\"time\":" + String(5 - elapsed) + "}";
+      ws.textAll(msg);
+    }
+  } else if (isReceiving) {
+    isReceiving = false;
+    if (lastCodeLength > 0) {
+      saveCodeToEEPROM(lastCode, lastCodeLength, 0, pendingName.c_str());
+    }
+  }
+  
+  delay(10);
 }
